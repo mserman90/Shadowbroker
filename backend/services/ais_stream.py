@@ -211,9 +211,10 @@ def _ais_stream_loop():
     """Main loop: spawn node proxy and process messages from stdout."""
     import subprocess
     import os
-    
+
     proxy_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ais_proxy.js")
-    
+    backoff = 1  # Exponential backoff starting at 1 second
+
     while _ws_running:
         try:
             logger.info("Starting Node.js AIS Stream Proxy...")
@@ -323,8 +324,12 @@ def _ais_stream_loop():
         except Exception as e:
             logger.error(f"AIS proxy connection error: {e}")
             if _ws_running:
-                logger.info("Restarting AIS proxy in 5 seconds...")
-                time.sleep(5)
+                logger.info(f"Restarting AIS proxy in {backoff}s (exponential backoff)...")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 60)  # Double up to 60s max
+            continue
+        # Reset backoff on successful connection (got at least some messages)
+        backoff = 1
 
 
 def _run_ais_loop():

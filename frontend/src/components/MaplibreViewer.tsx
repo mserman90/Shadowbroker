@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE } from "@/lib/api";
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Map, { Source, Layer, MapRef, ViewState, Popup, Marker } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -267,7 +268,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
 
         if (callsign && callsign !== prevCallsign.current) {
             prevCallsign.current = callsign;
-            fetch(`http://localhost:8000/api/route/${callsign}`)
+            fetch(`${API_BASE}/api/route/${callsign}`)
                 .then(res => res.json())
                 .then(routeData => {
                     if (isMounted) setDynamicRoute(routeData);
@@ -669,9 +670,16 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
     }, [activeLayers.ships_important, activeLayers.ships_civilian, activeLayers.ships_passenger, data?.ships, inView]);
 
     // Extract ship cluster positions from the map source for HTML labels
+    const shipClusterHandlerRef = useRef<(() => void) | null>(null);
     useEffect(() => {
         const map = mapRef.current?.getMap();
         if (!map || !shipsGeoJSON) { setShipClusters([]); return; }
+
+        // Remove previous handler if it exists
+        if (shipClusterHandlerRef.current) {
+            map.off('moveend', shipClusterHandlerRef.current);
+            map.off('sourcedata', shipClusterHandlerRef.current);
+        }
 
         const update = () => {
             try {
@@ -689,6 +697,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 setShipClusters(unique);
             } catch { setShipClusters([]); }
         };
+        shipClusterHandlerRef.current = update;
 
         map.on('moveend', update);
         map.on('sourcedata', update);
@@ -698,9 +707,15 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
     }, [shipsGeoJSON]);
 
     // Extract earthquake cluster positions from the map source for HTML labels
+    const eqClusterHandlerRef = useRef<(() => void) | null>(null);
     useEffect(() => {
         const map = mapRef.current?.getMap();
         if (!map || !earthquakesGeoJSON) { setEqClusters([]); return; }
+
+        if (eqClusterHandlerRef.current) {
+            map.off('moveend', eqClusterHandlerRef.current);
+            map.off('sourcedata', eqClusterHandlerRef.current);
+        }
 
         const update = () => {
             try {
@@ -718,6 +733,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 setEqClusters(unique);
             } catch { setEqClusters([]); }
         };
+        eqClusterHandlerRef.current = update;
 
         map.on('moveend', update);
         map.on('sourcedata', update);
@@ -848,42 +864,58 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         const GAP = 6; // Minimum gap between boxes
         const MAX_OFFSET = 350;
 
-        // 2. Iterative Collision Resolution Loop
-        const maxIter = 40;
+        // 2. Grid-based Collision Resolution (O(n) per iteration instead of O(n²))
+        const CELL_W = BOX_W + GAP;
+        const CELL_H = 100; // Approximate max box height + gap
+        const maxIter = 30;
         for (let iter = 0; iter < maxIter; iter++) {
             let moved = false;
+            // Build spatial grid
+            const grid: Record<string, number[]> = {};
             for (let i = 0; i < items.length; i++) {
-                for (let j = i + 1; j < items.length; j++) {
-                    const a = items[i];
-                    const b = items[j];
-
-                    const aX = a.x + a.offsetX;
-                    const aY = a.y + a.offsetY;
-                    const bX = b.x + b.offsetX;
-                    const bY = b.y + b.offsetY;
-
-                    const dx = Math.abs(aX - bX);
-                    const dy = Math.abs(aY - bY);
-
-                    // Per-pair min distances using each box's actual estimated height
-                    const minDistX = BOX_W + GAP;
-                    const minDistY = (a.boxH + b.boxH) / 2 + GAP;
-
-                    if (dx < minDistX && dy < minDistY) {
-                        moved = true;
-
-                        const overlapX = minDistX - dx;
-                        const overlapY = minDistY - dy;
-
-                        // Push each by half the overlap + 1px to guarantee separation
-                        if (overlapY < overlapX) {
-                            const push = (overlapY / 2) + 1;
-                            if (aY <= bY) { a.offsetY -= push; b.offsetY += push; }
-                            else { a.offsetY += push; b.offsetY -= push; }
-                        } else {
-                            const push = (overlapX / 2) + 1;
-                            if (aX <= bX) { a.offsetX -= push; b.offsetX += push; }
-                            else { a.offsetX += push; b.offsetX -= push; }
+                const cx = Math.floor((items[i].x + items[i].offsetX) / CELL_W);
+                const cy = Math.floor((items[i].y + items[i].offsetY) / CELL_H);
+                const key = `${cx},${cy}`;
+                (grid[key] ??= []).push(i);
+            }
+            // Check collisions only within same/adjacent cells
+            const checked = new Set<string>();
+            for (const key in grid) {
+                const [cx, cy] = key.split(',').map(Number);
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const nk = `${cx + dx},${cy + dy}`;
+                        if (!grid[nk]) continue;
+                        const pairKey = cx + dx < cx || (cx + dx === cx && cy + dy < cy) ? `${nk}|${key}` : `${key}|${nk}`;
+                        if (key !== nk && checked.has(pairKey)) continue;
+                        checked.add(pairKey);
+                        const cellA = grid[key];
+                        const cellB = key === nk ? cellA : grid[nk];
+                        for (const i of cellA) {
+                            const startJ = key === nk ? cellA.indexOf(i) + 1 : 0;
+                            for (let jIdx = startJ; jIdx < cellB.length; jIdx++) {
+                                const j = cellB[jIdx];
+                                if (i === j) continue;
+                                const a = items[i], b = items[j];
+                                const adx = Math.abs((a.x + a.offsetX) - (b.x + b.offsetX));
+                                const ady = Math.abs((a.y + a.offsetY) - (b.y + b.offsetY));
+                                const minDistX = BOX_W + GAP;
+                                const minDistY = (a.boxH + b.boxH) / 2 + GAP;
+                                if (adx < minDistX && ady < minDistY) {
+                                    moved = true;
+                                    const overlapX = minDistX - adx;
+                                    const overlapY = minDistY - ady;
+                                    if (overlapY < overlapX) {
+                                        const push = (overlapY / 2) + 1;
+                                        if ((a.y + a.offsetY) <= (b.y + b.offsetY)) { a.offsetY -= push; b.offsetY += push; }
+                                        else { a.offsetY += push; b.offsetY -= push; }
+                                    } else {
+                                        const push = (overlapX / 2) + 1;
+                                        if ((a.x + a.offsetX) <= (b.x + b.offsetX)) { a.offsetX -= push; b.offsetX += push; }
+                                        else { a.offsetX += push; b.offsetX -= push; }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -941,7 +973,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         return {
             type: 'FeatureCollection',
             features: data.uavs.map((uav: any, i: number) => {
-                if (uav.lat == null || uav.lng == null) return null;
+                if (uav.lat == null || uav.lng == null || !inView(uav.lat, uav.lng)) return null;
                 return {
                     type: 'Feature',
                     properties: {
@@ -962,7 +994,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 };
             }).filter(Boolean)
         };
-    }, [activeLayers.military, data?.uavs]);
+    }, [activeLayers.military, data?.uavs, inView]);
 
     // UAV operational range circle — only for the selected UAV
     const uavRangeGeoJSON = useMemo(() => {
@@ -996,6 +1028,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
             type: 'FeatureCollection',
             features: data.gdelt.map((g: any, i: number) => {
                 if (!g.geometry || !g.geometry.coordinates) return null;
+                const [gLng, gLat] = g.geometry.coordinates;
+                if (!inView(gLat, gLng)) return null;
                 return {
                     type: 'Feature',
                     properties: { id: i, type: 'gdelt', title: g.title },
@@ -1003,14 +1037,14 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 };
             }).filter(Boolean)
         };
-    }, [activeLayers.global_incidents, data?.gdelt]);
+    }, [activeLayers.global_incidents, data?.gdelt, inView]);
 
     const liveuaGeoJSON = useMemo(() => {
         if (!activeLayers.global_incidents || !data?.liveuamap) return null;
         return {
             type: 'FeatureCollection',
             features: data.liveuamap.map((incident: any, i: number) => {
-                if (incident.lat == null || incident.lng == null) return null;
+                if (incident.lat == null || incident.lng == null || !inView(incident.lat, incident.lng)) return null;
                 const isViolent = /bomb|missil|strike|attack|kill|destroy|fire|shoot|expl|raid/i.test(incident.title || "");
                 return {
                     type: 'Feature',
@@ -1019,7 +1053,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 };
             }).filter(Boolean)
         };
-    }, [activeLayers.global_incidents, data?.liveuamap]);
+    }, [activeLayers.global_incidents, data?.liveuamap, inView]);
 
     const frontlineGeoJSON = useMemo(() => {
         if (!activeLayers.ukraine_frontline || !data?.frontlines) return null;

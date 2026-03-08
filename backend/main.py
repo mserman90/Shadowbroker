@@ -112,7 +112,25 @@ async def debug_latest_data():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    import time
+    d = get_latest_data()
+    last = d.get("last_updated")
+    return {
+        "status": "ok",
+        "last_updated": last,
+        "sources": {
+            "flights": len(d.get("commercial_flights", [])),
+            "military": len(d.get("military_flights", [])),
+            "ships": len(d.get("ships", [])),
+            "satellites": len(d.get("satellites", [])),
+            "earthquakes": len(d.get("earthquakes", [])),
+            "cctv": len(d.get("cctv", [])),
+            "news": len(d.get("news", [])),
+        },
+        "uptime_seconds": round(time.time() - _start_time),
+    }
+
+_start_time = __import__("time").time()
 
 from services.radio_intercept import get_top_broadcastify_feeds, get_openmhz_systems, get_recent_openmhz_calls, find_nearest_openmhz_system
 

@@ -3,9 +3,18 @@ import json
 import subprocess
 import shutil
 import time
+import requests
 from urllib.parse import urlparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+# Reusable session with connection pooling and retry logic
+_session = requests.Session()
+_retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[502, 503, 504])
+_session.mount("https://", HTTPAdapter(max_retries=_retry, pool_maxsize=20))
+_session.mount("http://", HTTPAdapter(max_retries=_retry, pool_maxsize=10))
 
 # Find bash for curl fallback — Git bash's curl has the TLS features
 # needed to pass CDN fingerprint checks (brotli, zstd, libpsl)
@@ -50,11 +59,10 @@ def fetch_with_curl(url, method="GET", json_data=None, timeout=15, headers=None)
         pass  # Fall through to curl below
     else:
         try:
-            import requests
             if method == "POST":
-                res = requests.post(url, json=json_data, timeout=timeout, headers=default_headers)
+                res = _session.post(url, json=json_data, timeout=timeout, headers=default_headers)
             else:
-                res = requests.get(url, timeout=timeout, headers=default_headers)
+                res = _session.get(url, timeout=timeout, headers=default_headers)
             res.raise_for_status()
             # Clear failure cache on success
             _domain_fail_cache.pop(domain, None)

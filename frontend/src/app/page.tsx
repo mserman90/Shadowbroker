@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE } from "@/lib/api";
 import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from 'next/dynamic';
 import { motion } from "framer-motion";
@@ -146,7 +147,7 @@ export default function Dashboard() {
     setRegionDossierLoading(true);
     setRegionDossier(null);
     try {
-      const res = await fetch(`http://localhost:8000/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
+      const res = await fetch(`${API_BASE}/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
       if (res.ok) {
         const data = await res.json();
         setRegionDossier(data);
@@ -175,7 +176,7 @@ export default function Dashboard() {
       try {
         const headers: Record<string, string> = {};
         if (fastEtag.current) headers['If-None-Match'] = fastEtag.current;
-        const res = await fetch("http://localhost:8000/api/live-data/fast", { headers });
+        const res = await fetch(`${API_BASE}/api/live-data/fast`, { headers });
         if (res.status === 304) return; // Data unchanged, skip update
         if (res.ok) {
           fastEtag.current = res.headers.get('etag') || null;
@@ -192,7 +193,7 @@ export default function Dashboard() {
       try {
         const headers: Record<string, string> = {};
         if (slowEtag.current) headers['If-None-Match'] = slowEtag.current;
-        const res = await fetch("http://localhost:8000/api/live-data/slow", { headers });
+        const res = await fetch(`${API_BASE}/api/live-data/slow`, { headers });
         if (res.status === 304) return;
         if (res.ok) {
           slowEtag.current = res.headers.get('etag') || null;
@@ -208,10 +209,10 @@ export default function Dashboard() {
     fetchFastData();
     fetchSlowData();
 
-    // Fast polling: 15s (backend updates every 60s — polling more often just yields 304s)
-    // Slow polling: 60s (backend updates every 30min)
-    const fastInterval = setInterval(fetchFastData, 15000);
-    const slowInterval = setInterval(fetchSlowData, 60000);
+    // Fast polling: 60s (matches backend update cadence — was 15s, wasting 75% on 304s)
+    // Slow polling: 120s (backend updates every 30min)
+    const fastInterval = setInterval(fetchFastData, 60000);
+    const slowInterval = setInterval(fetchSlowData, 120000);
 
     return () => {
       clearInterval(fastInterval);

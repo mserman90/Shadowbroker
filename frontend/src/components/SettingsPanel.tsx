@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE } from "@/lib/api";
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings, Eye, EyeOff, Copy, Check, ExternalLink, Key, Shield, X, Save, ChevronDown, ChevronUp } from "lucide-react";
@@ -41,7 +42,7 @@ const SettingsPanel = React.memo(function SettingsPanel({ isOpen, onClose }: { i
 
     const fetchKeys = useCallback(async () => {
         try {
-            const res = await fetch("http://localhost:8000/api/settings/api-keys");
+            const res = await fetch(`${API_BASE}/api/settings/api-keys`);
             if (res.ok) {
                 const data = await res.json();
                 setApis(data);
@@ -83,7 +84,7 @@ const SettingsPanel = React.memo(function SettingsPanel({ isOpen, onClose }: { i
         if (!api.env_key) return;
         setSaving(true);
         try {
-            const res = await fetch("http://localhost:8000/api/settings/api-keys", {
+            const res = await fetch(`${API_BASE}/api/settings/api-keys`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ env_key: api.env_key, value: editValue }),

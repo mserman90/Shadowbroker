@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE } from "@/lib/api";
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadioReceiver, Activity, Play, Square, FastForward, ChevronDown, ChevronUp } from 'lucide-react';
@@ -18,7 +19,7 @@ export default function RadioInterceptPanel({ data, isEavesdropping, setIsEavesd
     useEffect(() => {
         const fetchFeeds = async () => {
             try {
-                const res = await fetch("http://localhost:8000/api/radio/top");
+                const res = await fetch(`${API_BASE}/api/radio/top`);
                 if (res.ok) {
                     const json = await res.json();
                     setFeeds(json);
@@ -47,12 +48,12 @@ export default function RadioInterceptPanel({ data, isEavesdropping, setIsEavesd
                         category: 'SIGINT'
                     }, ...prev]);
 
-                    const res = await fetch(`http://localhost:8000/api/radio/nearest?lat=${eavesdropLocation.lat}&lng=${eavesdropLocation.lng}`);
+                    const res = await fetch(`${API_BASE}/api/radio/nearest?lat=${eavesdropLocation.lat}&lng=${eavesdropLocation.lng}`);
                     if (res.ok) {
                         const system = await res.json();
                         if (system && system.shortName) {
                             // Valid OpenMHZ system found! Fetch recent calls
-                            const callRes = await fetch(`http://localhost:8000/api/radio/openmhz/calls/${system.shortName}`);
+                            const callRes = await fetch(`${API_BASE}/api/radio/openmhz/calls/${system.shortName}`);
                             if (callRes.ok) {
                                 const calls = await callRes.json();
                                 if (calls && calls.length > 0) {
@@ -189,14 +190,14 @@ export default function RadioInterceptPanel({ data, isEavesdropping, setIsEavesd
 
         if (scanLoc) {
             try {
-                const res = await fetch(`http://localhost:8000/api/radio/nearest-list?lat=${scanLoc.lat}&lng=${scanLoc.lng}&limit=3`);
+                const res = await fetch(`${API_BASE}/api/radio/nearest-list?lat=${scanLoc.lat}&lng=${scanLoc.lng}&limit=3`);
                 if (res.ok) {
                     const systems = await res.json();
 
                     // Try to find a system with an active unplayed burst
                     for (const system of systems) {
                         if (system && system.shortName) {
-                            const callRes = await fetch(`http://localhost:8000/api/radio/openmhz/calls/${system.shortName}`);
+                            const callRes = await fetch(`${API_BASE}/api/radio/openmhz/calls/${system.shortName}`);
                             if (callRes.ok) {
                                 const calls = await callRes.json();
                                 if (calls && calls.length > 0) {

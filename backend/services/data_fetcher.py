@@ -72,8 +72,8 @@ class OpenSkyClient:
 
 # User provided credentials
 opensky_client = OpenSkyClient(
-    client_id=os.environ.get("OPENSKY_CLIENT_ID", "vancecook-api-client"),
-    client_secret=os.environ.get("OPENSKY_CLIENT_SECRET", "YOUR_OPENSKY_SECRET")
+    client_id=os.environ.get("OPENSKY_CLIENT_ID", ""),
+    client_secret=os.environ.get("OPENSKY_CLIENT_SECRET", "")
 )
 
 # Throttling and caching for OpenSky to observe the 400 req/day limit
@@ -885,9 +885,10 @@ def fetch_flights():
                     by_icao[id(f)] = f  # no icao — keep as unique
             return list(by_icao.values())
 
-        latest_data['commercial_flights'] = _merge_category(commercial, latest_data.get('commercial_flights', []))
-        latest_data['private_jets'] = _merge_category(private_jets, latest_data.get('private_jets', []))
-        latest_data['private_flights'] = _merge_category(private_ga, latest_data.get('private_flights', []))
+        with _data_lock:
+            latest_data['commercial_flights'] = _merge_category(commercial, latest_data.get('commercial_flights', []))
+            latest_data['private_jets'] = _merge_category(private_jets, latest_data.get('private_jets', []))
+            latest_data['private_flights'] = _merge_category(private_ga, latest_data.get('private_flights', []))
 
     # Always write raw flights for GPS jamming analysis (nac_p field)
     if flights:
@@ -964,27 +965,39 @@ def fetch_flights():
     all_lists = [commercial, private_jets, private_ga, existing_tracked]
     seen_hexes = set()
     trail_count = 0
-    for flist in all_lists:
-        for f in flist:
-            count, hex_id = _accumulate_trail(f, now_ts, check_route=True)
+    with _trails_lock:
+        for flist in all_lists:
+            for f in flist:
+                count, hex_id = _accumulate_trail(f, now_ts, check_route=True)
+                trail_count += count
+                if hex_id:
+                    seen_hexes.add(hex_id)
+
+        # Also process military flights (separate list)
+        for mf in latest_data.get('military_flights', []):
+            count, hex_id = _accumulate_trail(mf, now_ts, check_route=False)
             trail_count += count
             if hex_id:
                 seen_hexes.add(hex_id)
-    
-    # Also process military flights (separate list)
-    for mf in latest_data.get('military_flights', []):
-        count, hex_id = _accumulate_trail(mf, now_ts, check_route=False)
-        trail_count += count
-        if hex_id:
-            seen_hexes.add(hex_id)
-    
-    # Prune trails for aircraft not seen in 30 minutes
-    stale_cutoff = now_ts - 1800
-    stale_keys = [k for k, v in flight_trails.items() if v['last_seen'] < stale_cutoff]
-    for k in stale_keys:
-        del flight_trails[k]
-    
-    logger.info(f"Trail accumulation: {trail_count} active trails, {len(stale_keys)} pruned")
+
+        # Prune stale trails (10 min for non-tracked, 30 min for tracked)
+        tracked_hexes = {t.get('icao24', '').lower() for t in latest_data.get('tracked_flights', [])}
+        stale_keys = []
+        for k, v in flight_trails.items():
+            cutoff = now_ts - 1800 if k in tracked_hexes else now_ts - 600
+            if v['last_seen'] < cutoff:
+                stale_keys.append(k)
+        for k in stale_keys:
+            del flight_trails[k]
+
+        # Enforce global cap — evict oldest trails first
+        if len(flight_trails) > _MAX_TRACKED_TRAILS:
+            sorted_keys = sorted(flight_trails.keys(), key=lambda k: flight_trails[k]['last_seen'])
+            evict_count = len(flight_trails) - _MAX_TRACKED_TRAILS
+            for k in sorted_keys[:evict_count]:
+                del flight_trails[k]
+
+    logger.info(f"Trail accumulation: {trail_count} active trails, {len(stale_keys)} pruned, {len(flight_trails)} total")
 
     # -----------------------------------------------------------------------
     # GPS / GNSS Jamming Detection — aggregate NACp from ADS-B transponders
@@ -1567,6 +1580,8 @@ def fetch_uavs():
 
 cached_airports = []
 flight_trails = {}  # {icao_hex: {points: [[lat, lng, alt, ts], ...], last_seen: ts}}
+_trails_lock = threading.Lock()
+_MAX_TRACKED_TRAILS = 2000  # Global cap on number of aircraft trails in memory
 
 # (math imported at module top)
 
@@ -1751,5 +1766,6 @@ def stop_scheduler():
     scheduler.shutdown()
 
 def get_latest_data():
-    return latest_data
+    with _data_lock:
+        return dict(latest_data)
 
