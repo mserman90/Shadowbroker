@@ -10,6 +10,7 @@ import random
 import math
 import json
 import time
+from pathlib import Path
 import threading
 import io
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -104,8 +105,18 @@ latest_data = {
     "kiwisdr": [],
     "space_weather": None,
     "internet_outages": [],
-    "firms_fires": []
+    "firms_fires": [],
+    "datacenters": []
 }
+
+# Per-source freshness timestamps — updated each time a fetch function completes successfully
+source_timestamps = {}
+
+def _mark_fresh(*keys):
+    """Record the current UTC time for one or more data source keys."""
+    now = datetime.utcnow().isoformat()
+    for k in keys:
+        source_timestamps[k] = now
 
 # Thread lock for safe reads/writes to latest_data
 _data_lock = threading.Lock()
@@ -337,20 +348,10 @@ _KEYWORD_COORDS = {
 }
 
 def fetch_news():
-    feeds = {
-        "NPR": "https://feeds.npr.org/1004/rss.xml",
-        "BBC": "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "AlJazeera": "https://www.aljazeera.com/xml/rss/all.xml",
-        "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-        "GDACS": "https://www.gdacs.org/xml/rss.xml",
-        "NHK": "https://www3.nhk.or.jp/nhkworld/rss/world.xml",
-        "CNA": "https://www.channelnewsasia.com/rssfeed/8395986",
-        "Mercopress": "https://en.mercopress.com/rss/"
-    }
-    source_weights = {
-        "NPR": 4, "BBC": 3, "AlJazeera": 2, "NYT": 1, 
-        "GDACS": 5, "NHK": 3, "CNA": 3, "Mercopress": 3
-    }
+    from services.news_feed_config import get_feeds
+    feed_config = get_feeds()
+    feeds = {f["name"]: f["url"] for f in feed_config}
+    source_weights = {f["name"]: f["weight"] for f in feed_config}
     
     clusters = {}
     
@@ -477,6 +478,7 @@ def fetch_news():
 
     news_items.sort(key=lambda x: x['risk_score'], reverse=True)
     latest_data['news'] = news_items
+    _mark_fresh("news")
 
 def fetch_defense_stocks():
     tickers = ["RTX", "LMT", "NOC", "GD", "BA", "PLTR"]
@@ -500,6 +502,7 @@ def fetch_defense_stocks():
                 logger.warning(f"Could not fetch data for {t}: {e}")
                 
         latest_data['stocks'] = stocks_data
+        _mark_fresh("stocks")
     except Exception as e:
         logger.error(f"Error fetching stocks: {e}")
 
@@ -526,6 +529,7 @@ def fetch_oil_prices():
                 logger.warning(f"Could not fetch data for {symbol}: {e}")
                 
         latest_data['oil'] = oil_data
+        _mark_fresh("oil")
     except Exception as e:
         logger.error(f"Error fetching oil: {e}")
 
@@ -899,6 +903,8 @@ def fetch_flights():
             latest_data['private_jets'] = _merge_category(private_jets, latest_data.get('private_jets', []))
             latest_data['private_flights'] = _merge_category(private_ga, latest_data.get('private_flights', []))
 
+    _mark_fresh("commercial_flights", "private_jets", "private_flights")
+
     # Always write raw flights for GPS jamming analysis (nac_p field)
     if flights:
         latest_data['flights'] = flights
@@ -1117,30 +1123,64 @@ def fetch_ships():
     
     logger.info(f"Ships: {len(carriers)} carriers + {len(ais_vessels)} AIS vessels")
     latest_data['ships'] = ships
+    _mark_fresh("ships")
 
 def fetch_military_flights():
     # True ADS-B Exchange military data requires paid API access.
     # We will use adsb.lol (an open source ADSB aggregator) /v2/mil fallback.
     military_flights = []
+    detected_uavs = []
     try:
         url = "https://api.adsb.lol/v2/mil"
         response = fetch_with_curl(url, timeout=10)
         if response.status_code == 200:
             ac = response.json().get('ac', [])
-            for f in ac: 
+            for f in ac:
                 try:
                     lat = f.get("lat")
                     lng = f.get("lon")
                     heading = f.get("track") or 0
-                    
+
                     if lat is None or lng is None:
                         continue
-                        
+
                     model = str(f.get("t", "UNKNOWN")).upper()
+                    callsign = str(f.get("flight", "MIL-UNKN")).strip()
 
                     # Skip fixed structures (towers, oil platforms) that broadcast ADS-B
                     if model == "TWR":
                         continue
+
+                    alt_raw = f.get("alt_baro")
+                    alt_value = 0
+                    if isinstance(alt_raw, (int, float)):
+                        alt_value = alt_raw * 0.3048
+
+                    # Ground speed from ADS-B (in knots)
+                    gs_knots = f.get("gs")
+                    speed_knots = round(gs_knots, 1) if isinstance(gs_knots, (int, float)) else None
+
+                    # Check if this is a UAV/drone before classifying as regular military
+                    is_uav, uav_type, wiki_url = _classify_uav(model, callsign)
+                    if is_uav:
+                        detected_uavs.append({
+                            "id": f"uav-{f.get('hex', '')}",
+                            "callsign": callsign,
+                            "aircraft_model": f.get("t", "Unknown"),
+                            "lat": float(lat),
+                            "lng": float(lng),
+                            "alt": alt_value,
+                            "heading": heading,
+                            "speed_knots": speed_knots,
+                            "country": f.get("r", "Unknown"),
+                            "uav_type": uav_type,
+                            "wiki": wiki_url or "",
+                            "type": "uav",
+                            "registration": f.get("r", "N/A"),
+                            "icao24": f.get("hex", ""),
+                            "squawk": f.get("squawk", ""),
+                        })
+                        continue  # Don't double-count as military flight
 
                     mil_cat = "default"
                     if "H" in model and any(c.isdigit() for c in model):
@@ -1151,27 +1191,11 @@ def fetch_military_flights():
                         mil_cat = "fighter"
                     elif any(k in model for k in ["C17", "C5", "C130", "C30", "A400", "V22"]):
                         mil_cat = "cargo"
-                    elif any(k in model for k in ["P8", "E3", "E8", "U2", "RQ", "MQ"]):
+                    elif any(k in model for k in ["P8", "E3", "E8", "U2"]):
                         mil_cat = "recon"
 
-                    # Military flights don't file public routes
-                    origin_loc = None
-                    dest_loc = None
-                    origin_name = "UNKNOWN"
-                    dest_name = "UNKNOWN"
-
-
-                    alt_raw = f.get("alt_baro")
-                    alt_value = 0
-                    if isinstance(alt_raw, (int, float)):
-                        alt_value = alt_raw * 0.3048
-                    
-                    # Ground speed from ADS-B (in knots)
-                    gs_knots = f.get("gs")
-                    speed_knots = round(gs_knots, 1) if isinstance(gs_knots, (int, float)) else None
-
                     military_flights.append({
-                        "callsign": str(f.get("flight", "MIL-UNKN")).strip(),
+                        "callsign": callsign,
                         "country": f.get("r", "Military Asset"),
                         "lng": float(lng),
                         "lat": float(lat),
@@ -1179,10 +1203,10 @@ def fetch_military_flights():
                         "heading": heading,
                         "type": "military_flight",
                         "military_type": mil_cat,
-                        "origin_loc": origin_loc,
-                        "dest_loc": dest_loc,
-                        "origin_name": origin_name,
-                        "dest_name": dest_name,
+                        "origin_loc": None,
+                        "dest_loc": None,
+                        "origin_name": "UNKNOWN",
+                        "dest_name": "UNKNOWN",
                         "registration": f.get("r", "N/A"),
                         "model": f.get("t", "Unknown"),
                         "icao24": f.get("hex", ""),
@@ -1194,15 +1218,18 @@ def fetch_military_flights():
                     continue
     except Exception as e:
         logger.error(f"Error fetching military flights: {e}")
-        
-    if not military_flights:
+
+    if not military_flights and not detected_uavs:
         # API failed or rate limited — log but do NOT inject fake data
         logger.warning("No military flights retrieved — keeping previous data if available")
         # Preserve existing data rather than overwriting with empty
         if latest_data.get('military_flights'):
             return
-            
+
     latest_data['military_flights'] = military_flights
+    latest_data['uavs'] = detected_uavs
+    _mark_fresh("military_flights", "uavs")
+    logger.info(f"UAVs: {len(detected_uavs)} real drones detected via ADS-B")
     
     # Cross-reference military flights with Plane-Alert DB
     tracked_mil = []
@@ -1254,12 +1281,14 @@ def fetch_weather():
             if "radar" in data and "past" in data["radar"]:
                 latest_time = data["radar"]["past"][-1]["time"]
                 latest_data["weather"] = {"time": latest_time, "host": data.get("host", "https://tilecache.rainviewer.com")}
+                _mark_fresh("weather")
     except Exception as e:
         logger.error(f"Error fetching weather: {e}")
 
 def fetch_cctv():
     try:
         latest_data["cctv"] = get_all_cameras()
+        _mark_fresh("cctv")
     except Exception as e:
         logger.error(f"Error fetching cctv from DB: {e}")
         latest_data["cctv"] = []
@@ -1268,6 +1297,7 @@ def fetch_kiwisdr():
     try:
         from services.kiwisdr_fetcher import fetch_kiwisdr_nodes
         latest_data["kiwisdr"] = fetch_kiwisdr_nodes()
+        _mark_fresh("kiwisdr")
     except Exception as e:
         logger.error(f"Error fetching KiwiSDR nodes: {e}")
         latest_data["kiwisdr"] = []
@@ -1310,6 +1340,8 @@ def fetch_firms_fires():
     except Exception as e:
         logger.error(f"Error fetching FIRMS fires: {e}")
     latest_data["firms_fires"] = fires
+    if fires:
+        _mark_fresh("firms_fires")
 
 def fetch_space_weather():
     """Fetch NOAA SWPC Kp index and recent solar events."""
@@ -1348,6 +1380,7 @@ def fetch_space_weather():
             "kp_text": kp_text,
             "events": events,
         }
+        _mark_fresh("space_weather")
         logger.info(f"Space weather: Kp={kp_value} ({kp_text}), {len(events)} events")
     except Exception as e:
         logger.error(f"Error fetching space weather: {e}")
@@ -1445,6 +1478,129 @@ def fetch_internet_outages():
     except Exception as e:
         logger.error(f"Error fetching internet outages: {e}")
     latest_data["internet_outages"] = outages
+    if outages:
+        _mark_fresh("internet_outages")
+
+_DC_CACHE_PATH = Path(__file__).parent.parent / "data" / "datacenters.json"
+_DC_URL = "https://raw.githubusercontent.com/Ringmast4r/Data-Center-Map---Global/1f290297c6a11454dc7a47bf95aef7cf0fe1d34c/datacenters_cleaned.json"
+
+# Country bounding boxes (lat_min, lat_max, lng_min, lng_max) for coordinate validation.
+# The source dataset has abs(lat) for all Southern Hemisphere entries, so we fix the sign
+# and then validate the result falls within the country's bounding box.
+_COUNTRY_BBOX: dict[str, tuple[float, float, float, float]] = {
+    "Argentina": (-55, -21, -74, -53), "Australia": (-44, -10, 112, 154),
+    "Bolivia": (-23, -9, -70, -57), "Brazil": (-34, 6, -74, -34),
+    "Chile": (-56, -17, -76, -66), "Colombia": (-5, 13, -82, -66),
+    "Ecuador": (-5, 2, -81, -75), "Indonesia": (-11, 6, 95, 141),
+    "Kenya": (-5, 5, 34, 42), "Madagascar": (-26, -12, 43, 51),
+    "Mozambique": (-27, -10, 30, 41), "New Zealand": (-47, -34, 166, 179),
+    "Paraguay": (-28, -19, -63, -54), "Peru": (-18, 0, -82, -68),
+    "South Africa": (-35, -22, 16, 33), "Tanzania": (-12, -1, 29, 41),
+    "Uruguay": (-35, -30, -59, -53), "Zimbabwe": (-23, -15, 25, 34),
+    # Northern-hemisphere countries for validation only
+    "United States": (24, 72, -180, -65), "Canada": (41, 84, -141, -52),
+    "United Kingdom": (49, 61, -9, 2), "Germany": (47, 55, 5, 16),
+    "France": (41, 51, -5, 10), "Japan": (24, 46, 123, 146),
+    "India": (6, 36, 68, 98), "China": (18, 54, 73, 135),
+    "Singapore": (1, 2, 103, 105), "Spain": (36, 44, -10, 5),
+    "Netherlands": (50, 54, 3, 8), "Sweden": (55, 70, 11, 25),
+    "Italy": (36, 47, 6, 19), "Russia": (41, 82, 19, 180),
+    "Mexico": (14, 33, -118, -86), "Nigeria": (4, 14, 2, 15),
+    "Thailand": (5, 21, 97, 106), "Malaysia": (0, 8, 99, 120),
+    "Philippines": (4, 21, 116, 127), "South Korea": (33, 39, 124, 132),
+    "Taiwan": (21, 26, 119, 123), "Hong Kong": (22, 23, 113, 115),
+    "Vietnam": (8, 24, 102, 110), "Poland": (49, 55, 14, 25),
+    "Switzerland": (45, 48, 5, 11), "Austria": (46, 49, 9, 17),
+    "Belgium": (49, 52, 2, 7), "Denmark": (54, 58, 8, 16),
+    "Finland": (59, 70, 20, 32), "Norway": (57, 72, 4, 32),
+    "Ireland": (51, 56, -11, -5), "Portugal": (36, 42, -10, -6),
+    "Turkey": (35, 42, 25, 45), "Israel": (29, 34, 34, 36),
+    "UAE": (22, 27, 51, 56), "Saudi Arabia": (16, 33, 34, 56),
+}
+
+# Countries whose DCs always sit south of the equator
+_SOUTHERN_COUNTRIES = {
+    "Argentina", "Australia", "Bolivia", "Brazil", "Chile", "Madagascar",
+    "Mozambique", "New Zealand", "Paraguay", "Peru", "South Africa",
+    "Tanzania", "Uruguay", "Zimbabwe",
+}
+
+
+def _fix_dc_coords(lat: float, lng: float, country: str) -> tuple[float, float] | None:
+    """Fix and validate data-center coordinates against the stated country.
+
+    The source dataset stores abs(lat) for Southern-Hemisphere entries.
+    We negate lat when the country is in the Southern Hemisphere, then
+    validate the result falls within the country bounding box (if known).
+    Returns corrected (lat, lng) or None if the coords are clearly wrong.
+    """
+    # Fix Southern Hemisphere sign
+    if country in _SOUTHERN_COUNTRIES and lat > 0:
+        lat = -lat
+
+    bbox = _COUNTRY_BBOX.get(country)
+    if bbox:
+        lat_min, lat_max, lng_min, lng_max = bbox
+        if lat_min <= lat <= lat_max and lng_min <= lng <= lng_max:
+            return lat, lng
+        # Try swapping sign as last resort (some entries are just wrong sign)
+        if lat_min <= -lat <= lat_max and lng_min <= lng <= lng_max:
+            return -lat, lng
+        # Coords don't match country at all — drop the entry
+        return None
+
+    # No bbox for this country — basic sanity only
+    return lat, lng
+
+
+def fetch_datacenters():
+    """Load data center locations (static dataset, cached locally after first fetch)."""
+    dcs = []
+    try:
+        raw = None
+        # Use local cache if it exists and is less than 7 days old
+        if _DC_CACHE_PATH.exists():
+            age_days = (time.time() - _DC_CACHE_PATH.stat().st_mtime) / 86400
+            if age_days < 7:
+                raw = json.loads(_DC_CACHE_PATH.read_text(encoding="utf-8"))
+        # Otherwise fetch from GitHub
+        if raw is None:
+            resp = fetch_with_curl(_DC_URL, timeout=20)
+            if resp.status_code == 200:
+                raw = resp.json()
+                _DC_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                _DC_CACHE_PATH.write_text(json.dumps(raw), encoding="utf-8")
+        if raw:
+            dropped = 0
+            for entry in raw:
+                coords = entry.get("city_coords")
+                if not coords or not isinstance(coords, list) or len(coords) < 2:
+                    continue
+                lat, lng = coords[0], coords[1]
+                if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                    continue
+                country = entry.get("country", "")
+                fixed = _fix_dc_coords(lat, lng, country)
+                if fixed is None:
+                    dropped += 1
+                    continue
+                lat, lng = fixed
+                dcs.append({
+                    "name": entry.get("name", "Unknown"),
+                    "company": entry.get("company", ""),
+                    "city": entry.get("city", ""),
+                    "country": country,
+                    "lat": lat,
+                    "lng": lng,
+                })
+            if dropped:
+                logger.info(f"Data centers: dropped {dropped} entries with mismatched coordinates")
+        logger.info(f"Data centers: {len(dcs)} with valid coordinates (from {'cache' if _DC_CACHE_PATH.exists() else 'GitHub'})")
+    except Exception as e:
+        logger.error(f"Error fetching data centers: {e}")
+    latest_data["datacenters"] = dcs
+    if dcs:
+        _mark_fresh("datacenters")
 
 def fetch_bikeshare():
     bikes = []
@@ -1503,6 +1659,8 @@ def fetch_earthquakes():
     except Exception as e:
         logger.error(f"Error fetching earthquakes: {e}")
     latest_data["earthquakes"] = quakes
+    if quakes:
+        _mark_fresh("earthquakes")
 
 # Satellite GP data cache — re-download from CelesTrak only every 30 minutes
 _sat_gp_cache = {"data": None, "last_fetch": 0}
@@ -1802,79 +1960,78 @@ def fetch_satellites():
     # Only overwrite if we got data — don't wipe the map on API timeout
     if sats:
         latest_data["satellites"] = sats
+        _mark_fresh("satellites")
     elif not latest_data.get("satellites"):
         latest_data["satellites"] = []
 
-def fetch_uavs():
-    # Simulated high-altitude long-endurance (HALE) and MALE UAVs over high-risk regions
-    
-    uav_targets = [
-        {
-            "name": "RQ-4 Global Hawk", "center": [31.5, 34.8], "radius": 0.5, "alt": 15000,
-            "country": "USA", "uav_type": "HALE Surveillance", "range_km": 2200,
-            "wiki": "https://en.wikipedia.org/wiki/Northrop_Grumman_RQ-4_Global_Hawk",
-            "speed_knots": 340
-        },
-        {
-            "name": "MQ-9 Reaper", "center": [49.0, 31.4], "radius": 1.2, "alt": 12000,
-            "country": "USA", "uav_type": "MALE Strike/ISR", "range_km": 1850,
-            "wiki": "https://en.wikipedia.org/wiki/General_Atomics_MQ-9_Reaper",
-            "speed_knots": 250
-        },
-        {
-            "name": "Bayraktar TB2", "center": [23.6, 120.9], "radius": 0.8, "alt": 8000,
-            "country": "Turkey", "uav_type": "MALE Strike", "range_km": 150,
-            "wiki": "https://en.wikipedia.org/wiki/Bayraktar_TB2",
-            "speed_knots": 120
-        },
-        {
-            "name": "MQ-1C Gray Eagle", "center": [38.0, 127.0], "radius": 0.4, "alt": 10000,
-            "country": "USA", "uav_type": "MALE ISR/Strike", "range_km": 400,
-            "wiki": "https://en.wikipedia.org/wiki/General_Atomics_MQ-1C_Gray_Eagle",
-            "speed_knots": 150
-        },
-        {
-            "name": "RQ-170 Sentinel", "center": [25.0, 55.0], "radius": 1.5, "alt": 18000,
-            "country": "USA", "uav_type": "Stealth ISR", "range_km": 1100,
-            "wiki": "https://en.wikipedia.org/wiki/Lockheed_Martin_RQ-170_Sentinel",
-            "speed_knots": 300
-        }
-    ]
-    
-    # Use the current hour and minute to create a continuous slow orbit
-    now = datetime.utcnow()
-    # 1 full orbit every 10 minutes
-    time_factor = ((now.minute % 10) * 60 + now.second) / 600.0  
-    angle = time_factor * 2 * math.pi
-    
-    uavs = []
-    for idx, t in enumerate(uav_targets):
-        # Offset the angle slightly so they aren't all synchronized
-        offset_angle = angle + (idx * math.pi / 2.5)
-        
-        lat = t["center"][0] + math.sin(offset_angle) * t["radius"]
-        lng = t["center"][1] + math.cos(offset_angle) * t["radius"]
-        
-        heading = (math.degrees(offset_angle) + 90) % 360
-        
-        uavs.append({
-            "id": f"uav-{idx}",
-            "callsign": t["name"],
-            "aircraft_model": t["name"],
-            "lat": lat,
-            "lng": lng,
-            "alt": t["alt"],
-            "heading": heading,
-            "speed_knots": t["speed_knots"],
-            "center": t["center"],
-            "orbit_radius": t["radius"],
-            "range_km": t["range_km"],
-            "country": t["country"],
-            "uav_type": t["uav_type"],
-            "wiki": t["wiki"],
-        })
-        
-    latest_data['uavs'] = uavs
+# ---------------------------------------------------------------------------
+# Real UAV detection from ADS-B data — filters military drone transponders
+# ---------------------------------------------------------------------------
+_UAV_TYPE_CODES = {"Q9", "R4", "TB2", "MALE", "HALE", "HERM", "HRON"}
+_UAV_CALLSIGN_PREFIXES = ("FORTE", "GHAWK", "REAP", "BAMS", "UAV", "UAS")
+_UAV_MODEL_KEYWORDS = ("RQ-", "MQ-", "RQ4", "MQ9", "MQ4", "MQ1", "REAPER", "GLOBALHAWK", "TRITON", "PREDATOR", "HERMES", "HERON", "BAYRAKTAR")
+_UAV_WIKI = {
+    "RQ4": "https://en.wikipedia.org/wiki/Northrop_Grumman_RQ-4_Global_Hawk",
+    "RQ-4": "https://en.wikipedia.org/wiki/Northrop_Grumman_RQ-4_Global_Hawk",
+    "MQ4": "https://en.wikipedia.org/wiki/Northrop_Grumman_MQ-4C_Triton",
+    "MQ-4": "https://en.wikipedia.org/wiki/Northrop_Grumman_MQ-4C_Triton",
+    "MQ9": "https://en.wikipedia.org/wiki/General_Atomics_MQ-9_Reaper",
+    "MQ-9": "https://en.wikipedia.org/wiki/General_Atomics_MQ-9_Reaper",
+    "MQ1": "https://en.wikipedia.org/wiki/General_Atomics_MQ-1C_Gray_Eagle",
+    "MQ-1": "https://en.wikipedia.org/wiki/General_Atomics_MQ-1C_Gray_Eagle",
+    "REAPER": "https://en.wikipedia.org/wiki/General_Atomics_MQ-9_Reaper",
+    "GLOBALHAWK": "https://en.wikipedia.org/wiki/Northrop_Grumman_RQ-4_Global_Hawk",
+    "TRITON": "https://en.wikipedia.org/wiki/Northrop_Grumman_MQ-4C_Triton",
+    "PREDATOR": "https://en.wikipedia.org/wiki/General_Atomics_MQ-1_Predator",
+    "HERMES": "https://en.wikipedia.org/wiki/Elbit_Hermes_900",
+    "HERON": "https://en.wikipedia.org/wiki/IAI_Heron",
+    "BAYRAKTAR": "https://en.wikipedia.org/wiki/Bayraktar_TB2",
+}
+
+def _classify_uav(model: str, callsign: str):
+    """Check if an aircraft is a UAV based on type code, callsign prefix, or model keywords.
+    Returns (is_uav, uav_type, wiki_url) or (False, None, None)."""
+    model_up = model.upper().replace(" ", "")
+    callsign_up = callsign.upper().strip()
+
+    # Check ICAO type codes
+    if model_up in _UAV_TYPE_CODES:
+        uav_type = "HALE Surveillance" if model_up in ("R4", "HALE") else "MALE ISR"
+        wiki = _UAV_WIKI.get(model_up, "")
+        return True, uav_type, wiki
+
+    # Check callsign prefixes (must also have a military-ish model)
+    for prefix in _UAV_CALLSIGN_PREFIXES:
+        if callsign_up.startswith(prefix):
+            uav_type = "HALE Surveillance" if prefix in ("FORTE", "GHAWK", "BAMS") else "MALE ISR"
+            wiki = _UAV_WIKI.get(prefix, "")
+            if prefix == "FORTE":
+                wiki = _UAV_WIKI["RQ4"]
+            elif prefix == "BAMS":
+                wiki = _UAV_WIKI["MQ4"]
+            return True, uav_type, wiki
+
+    # Check model keywords
+    for kw in _UAV_MODEL_KEYWORDS:
+        if kw in model_up:
+            # Determine type from keyword
+            if any(h in model_up for h in ("RQ4", "RQ-4", "GLOBALHAWK")):
+                return True, "HALE Surveillance", _UAV_WIKI.get(kw, "")
+            elif any(h in model_up for h in ("MQ4", "MQ-4", "TRITON")):
+                return True, "HALE Maritime Surveillance", _UAV_WIKI.get(kw, "")
+            elif any(h in model_up for h in ("MQ9", "MQ-9", "REAPER")):
+                return True, "MALE Strike/ISR", _UAV_WIKI.get(kw, "")
+            elif any(h in model_up for h in ("MQ1", "MQ-1", "PREDATOR")):
+                return True, "MALE ISR/Strike", _UAV_WIKI.get(kw, "")
+            elif "BAYRAKTAR" in model_up or "TB2" in model_up:
+                return True, "MALE Strike", _UAV_WIKI.get("BAYRAKTAR", "")
+            elif "HERMES" in model_up:
+                return True, "MALE ISR", _UAV_WIKI.get("HERMES", "")
+            elif "HERON" in model_up:
+                return True, "MALE ISR", _UAV_WIKI.get("HERON", "")
+            return True, "MALE ISR", _UAV_WIKI.get(kw, "")
+
+    return False, None, None
 
 cached_airports = []
 flight_trails = {}  # {icao_hex: {points: [[lat, lng, alt, ts], ...], last_seen: ts}}
@@ -1956,10 +2113,12 @@ def fetch_geopolitics():
         frontlines = fetch_ukraine_frontlines()
         if frontlines:
             latest_data['frontlines'] = frontlines
+            _mark_fresh("frontlines")
 
         gdelt = fetch_global_military_incidents()
         if gdelt is not None:
             latest_data['gdelt'] = gdelt
+            _mark_fresh("gdelt")
     except Exception as e:
         logger.error(f"Error fetching geopolitics: {e}")
 
@@ -1970,6 +2129,7 @@ def update_liveuamap():
         res = fetch_liveuamap()
         if res:
             latest_data['liveuamap'] = res
+            _mark_fresh("liveuamap")
     except Exception as e:
         logger.error(f"Liveuamap scraper error: {e}")
 
@@ -1978,9 +2138,8 @@ def update_fast_data():
     logger.info("Fast-tier data update starting...")
     fast_funcs = [
         fetch_flights,
-        fetch_military_flights,
+        fetch_military_flights,  # Also detects UAVs from ADS-B
         fetch_ships,
-        fetch_uavs,
         fetch_satellites,
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(fast_funcs)) as executor:
@@ -2005,6 +2164,7 @@ def update_slow_data():
         fetch_space_weather,
         fetch_internet_outages,
         fetch_firms_fires,
+        fetch_datacenters,
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(slow_funcs)) as executor:
         futures = [executor.submit(func) for func in slow_funcs]
@@ -2030,7 +2190,7 @@ def start_scheduler():
     # Run full update once on startup
     scheduler.add_job(update_all_data, 'date', run_date=datetime.now())
     
-    # Fast tier: every 60 seconds (flights, ships, military, satellites, UAVs)
+    # Fast tier: every 60 seconds (flights, ships, military+UAVs, satellites)
     scheduler.add_job(update_fast_data, 'interval', seconds=60)
     
     # Slow tier: every 30 minutes (news, stocks, weather, geopolitics)

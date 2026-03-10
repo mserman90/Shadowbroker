@@ -17,9 +17,16 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Check Python version
+:: Check Python version (warn if 3.13+)
 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo [*] Found Python %PYVER%
+for /f "tokens=1,2 delims=." %%a in ("%PYVER%") do (
+    if %%b GEQ 13 (
+        echo [!] WARNING: Python %PYVER% detected. Some packages may fail to build.
+        echo [!] Recommended: Python 3.10, 3.11, or 3.12.
+        echo.
+    )
+)
 
 :: Check for Node.js
 where npm >nul 2>&1
@@ -47,7 +54,7 @@ if not exist "venv\" (
 )
 call venv\Scripts\activate.bat
 echo [*] Installing Python dependencies (this may take a minute)...
-pip install -r requirements.txt
+pip install -q -r requirements.txt
 if %errorlevel% neq 0 (
     echo.
     echo [!] ERROR: pip install failed. See errors above.

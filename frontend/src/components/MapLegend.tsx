@@ -94,8 +94,7 @@ const LEGEND: LegendCategory[] = [
             { svg: airliner("yellow"), label: "Military — Standard" },
             { svg: plane("yellow"), label: "Fighter / Interceptor" },
             { svg: heli("yellow"), label: "Military — Helicopter" },
-            { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="orange" stroke="black"><path d="M12 2L15 8H9L12 2Z" /><rect x="8" y="8" width="8" height="2" /><path d="M4 10L10 14H14L20 10V12L14 16H10L4 12V10Z" /><circle cx="12" cy="14" r="2" fill="red"/></svg>`, label: "UAV / Drone" },
-            { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="orange" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6"/><circle cx="12" cy="12" r="2" fill="orange"/></svg>`, label: "UAV Operational Range (dashed circle)" },
+            { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="orange" stroke="black"><path d="M12 2L15 8H9L12 2Z" /><rect x="8" y="8" width="8" height="2" /><path d="M4 10L10 14H14L20 10V12L14 16H10L4 12V10Z" /><circle cx="12" cy="14" r="2" fill="red"/></svg>`, label: "UAV / Drone (live ADS-B)" },
         ],
     },
     {

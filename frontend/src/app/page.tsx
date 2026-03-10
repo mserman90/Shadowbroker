@@ -148,6 +148,7 @@ export default function Dashboard() {
     kiwisdr: false,
     firms: false,
     internet_outages: false,
+    datacenters: false,
   });
 
   // NASA GIBS satellite imagery state

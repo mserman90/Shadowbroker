@@ -2,8 +2,43 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plane, AlertTriangle, Activity, Satellite, Cctv, ChevronDown, ChevronUp, Ship, Eye, Anchor, Settings, Sun, Moon, BookOpen, Radio, Play, Pause, Globe, Flame, Wifi } from "lucide-react";
+import { Plane, AlertTriangle, Activity, Satellite, Cctv, ChevronDown, ChevronUp, Ship, Eye, Anchor, Settings, Sun, Moon, BookOpen, Radio, Play, Pause, Globe, Flame, Wifi, Server } from "lucide-react";
 import { useTheme } from "@/lib/ThemeContext";
+
+function relativeTime(iso: string | undefined): string {
+    if (!iso) return "";
+    const diff = Date.now() - new Date(iso + "Z").getTime();
+    if (diff < 0) return "now";
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    return `${Math.floor(hr / 24)}d ago`;
+}
+
+// Map layer IDs to freshness keys from the backend source_timestamps dict
+const FRESHNESS_MAP: Record<string, string> = {
+    flights: "commercial_flights",
+    private: "private_flights",
+    jets: "private_jets",
+    military: "military_flights",
+    tracked: "military_flights",
+    earthquakes: "earthquakes",
+    satellites: "satellites",
+    ships_important: "ships",
+    ships_civilian: "ships",
+    ships_passenger: "ships",
+    ukraine_frontline: "frontlines",
+    global_incidents: "gdelt",
+    cctv: "cctv",
+    gps_jamming: "commercial_flights",
+    kiwisdr: "kiwisdr",
+    firms: "firms_fires",
+    internet_outages: "internet_outages",
+    datacenters: "datacenters",
+};
 
 const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, activeLayers, setActiveLayers, onSettingsClick, onLegendClick, gibsDate, setGibsDate, gibsOpacity, setGibsOpacity }: { data: any; activeLayers: any; setActiveLayers: any; onSettingsClick?: () => void; onLegendClick?: () => void; gibsDate?: string; setGibsDate?: (d: string) => void; gibsOpacity?: number; setGibsOpacity?: (o: number) => void }) {
     const [isMinimized, setIsMinimized] = useState(false);
@@ -60,6 +95,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, active
         { id: "kiwisdr", name: "KiwiSDR Receivers", source: "KiwiSDR.com", count: data?.kiwisdr?.length || 0, icon: Radio },
         { id: "firms", name: "Fire Hotspots (24h)", source: "NASA FIRMS VIIRS", count: data?.firms_fires?.length || 0, icon: Flame },
         { id: "internet_outages", name: "Internet Outages", source: "IODA / Georgia Tech", count: data?.internet_outages?.length || 0, icon: Wifi },
+        { id: "datacenters", name: "Data Centers", source: "DC Map (GitHub)", count: data?.datacenters?.length || 0, icon: Server },
         { id: "day_night", name: "Day / Night Cycle", source: "Solar Calc", count: null, icon: Sun },
     ];
 
@@ -146,7 +182,12 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, active
                                                     </div>
                                                     <div className="flex flex-col">
                                                         <span className={`text-sm font-medium ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'} tracking-wide`}>{layer.name}</span>
-                                                        <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-wider mt-0.5">{layer.source} · {active ? 'LIVE' : 'OFF'}</span>
+                                                        <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-wider mt-0.5">{layer.source} · {active ? (() => {
+                                                            const fKey = FRESHNESS_MAP[layer.id];
+                                                            const freshness = fKey && data?.freshness?.[fKey];
+                                                            const rt = freshness ? relativeTime(freshness) : '';
+                                                            return rt ? <span className="text-cyan-500/70">{rt}</span> : 'LIVE';
+                                                        })() : 'OFF'}</span>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">

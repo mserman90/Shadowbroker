@@ -79,7 +79,7 @@ Do not append a trailing `.` to that command; Compose treats it as a service nam
 
 * **Global Incidents** — GDELT-powered conflict event aggregation (last 8 hours, ~1,000 events)
 * **Ukraine Frontline** — Live warfront GeoJSON from DeepState Map
-* **SIGINT/RISINT News Feed** — Real-time RSS aggregation from multiple intelligence-focused sources
+* **SIGINT/RISINT News Feed** — Real-time RSS aggregation from multiple intelligence-focused sources with user-customizable feeds (up to 20 sources, configurable priority weights 1-5)
 * **Region Dossier** — Right-click anywhere on the map for:
   * Country profile (population, capital, languages, currencies, area)
   * Head of state & government type (Wikidata SPARQL)
@@ -121,6 +121,7 @@ Do not append a trailing `.` to that command; Compose treats it as a service nam
 * **NASA FIRMS Fire Hotspots (24h)** — 5,000+ global thermal anomalies from NOAA-20 VIIRS satellite, updated every cycle. Flame-shaped icons color-coded by fire radiative power (FRP): yellow (low), orange, red, dark red (intense). Clustered at low zoom with fire-shaped cluster markers.
 * **Space Weather Badge** — Live NOAA geomagnetic storm indicator in the bottom status bar. Color-coded Kp index: green (quiet), yellow (active), red (storm G1–G5). Data from SWPC planetary K-index 1-minute feed.
 * **Internet Outage Monitoring** — Regional internet connectivity alerts from Georgia Tech IODA. Grey markers at affected regions with severity percentage. Uses only reliable datasources (BGP routing tables, active ping probing) — no telescope or interpolated data.
+* **Data Center Mapping** — 2,000+ global data centers plotted from a curated dataset. Clustered purple markers with server-rack icons. Click for operator, location, and automatic internet outage cross-referencing by country.
 
 ### 🌐 Additional Layers
 
@@ -198,6 +199,7 @@ Do not append a trailing `.` to that command; Compose treats it as a service nam
 | [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov) | NOAA-20 VIIRS fire/thermal hotspots | ~120s | No |
 | [NOAA SWPC](https://services.swpc.noaa.gov) | Space weather Kp index & solar events | ~120s | No |
 | [IODA (Georgia Tech)](https://ioda.inetintel.cc.gatech.edu) | Regional internet outage alerts | ~120s | No |
+| [DC Map (GitHub)](https://github.com/Ringmast4r/Data-Center-Map---Global) | Global data center locations | Static (cached 7d) | No |
 | [CARTO Basemaps](https://carto.com) | Dark map tiles | Continuous | No |
 
 ---
@@ -334,6 +336,7 @@ All layers are independently toggleable from the left panel:
 | KiwiSDR Receivers | ❌ OFF | Public SDR radio receivers |
 | Fire Hotspots (24h) | ❌ OFF | NASA FIRMS VIIRS thermal anomalies |
 | Internet Outages | ❌ OFF | IODA regional connectivity alerts |
+| Data Centers | ❌ OFF | Global data center locations (2,000+) |
 | Day / Night Cycle | ✅ ON | Solar terminator overlay |
 
 ---
@@ -345,8 +348,9 @@ The platform is optimized for handling massive real-time datasets:
 * **Gzip Compression** — API payloads compressed ~92% (11.6 MB → 915 KB)
 * **ETag Caching** — `304 Not Modified` responses skip redundant JSON parsing
 * **Viewport Culling** — Only features within the visible map bounds (+20% buffer) are rendered
-* **Clustered Rendering** — Ships, CCTV, and earthquakes use MapLibre clustering to reduce feature count
-* **Debounced Viewport Updates** — 300ms debounce prevents GeoJSON rebuild thrash during pan/zoom
+* **Imperative Map Updates** — High-volume layers (flights, satellites, fires) bypass React reconciliation via direct `setData()` calls
+* **Clustered Rendering** — Ships, CCTV, earthquakes, and data centers use MapLibre clustering to reduce feature count
+* **Debounced Viewport Updates** — 300ms debounce prevents GeoJSON rebuild thrash during pan/zoom; 2s debounce on dense layers (satellites, fires)
 * **Position Interpolation** — Smooth 10s tick animation between data refreshes
 * **React.memo** — Heavy components wrapped to prevent unnecessary re-renders
 * **Coordinate Precision** — Lat/lng rounded to 5 decimals (~1m) to reduce JSON size
@@ -361,6 +365,8 @@ live-risk-dashboard/
 │   ├── main.py                     # FastAPI app, middleware, API routes
 │   ├── carrier_cache.json          # Persisted carrier OSINT positions
 │   ├── cctv.db                     # SQLite CCTV camera database
+│   ├── config/
+│   │   └── news_feeds.json         # User-customizable RSS feed list (persists across restarts)
 │   └── services/
 │       ├── data_fetcher.py         # Core scheduler — fetches all data sources
 │       ├── ais_stream.py           # AIS WebSocket client (25K+ vessels)
@@ -372,7 +378,8 @@ live-risk-dashboard/
 │       ├── kiwisdr_fetcher.py      # KiwiSDR receiver scraper
 │       ├── sentinel_search.py      # Sentinel-2 STAC imagery search
 │       ├── network_utils.py        # HTTP client with curl fallback
-│       └── api_settings.py         # API key management
+│       ├── api_settings.py         # API key management
+│       └── news_feed_config.py     # RSS feed config manager (add/remove/weight feeds)
 │
 ├── frontend/
 │   ├── src/
@@ -390,7 +397,7 @@ live-risk-dashboard/
 │   │       ├── RadioInterceptPanel.tsx # Scanner-style radio panel
 │   │       ├── FindLocateBar.tsx   # Search/locate bar
 │   │       ├── ChangelogModal.tsx  # Version changelog popup
-│   │       ├── SettingsPanel.tsx   # App settings
+│   │       ├── SettingsPanel.tsx   # App settings (API Keys + News Feed manager)
 │   │       ├── ScaleBar.tsx        # Map scale indicator
 │   │       ├── WikiImage.tsx       # Wikipedia image fetcher
 │   │       └── ErrorBoundary.tsx   # Crash recovery wrapper

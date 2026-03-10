@@ -33,6 +33,7 @@ const svgHeliWhiteAlert = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xm
 const svgPlaneBlack = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#222" stroke="#444"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" /></svg>`)}`;
 const svgHeliBlack = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#222" stroke="#444"><path d="M10 6L10 14L8 16L8 18L10 17L12 22L14 17L16 18L16 16L14 14L14 6C14 4 13 2 12 2C11 2 10 4 10 6Z"/><circle cx="12" cy="12" r="8" fill="none" stroke="#444" stroke-dasharray="2 2" stroke-width="1"/></svg>`)}`;
 const svgDrone = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="orange" stroke="black"><path d="M12 2L15 8H9L12 2Z" /><rect x="8" y="8" width="8" height="2" /><path d="M4 10L10 14H14L20 10V12L14 16H10L4 12V10Z" /><circle cx="12" cy="14" r="2" fill="red"/></svg>`)}`;
+const svgDataCenter = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5"><rect x="3" y="3" width="18" height="6" rx="1" fill="#2e1065"/><rect x="3" y="11" width="18" height="6" rx="1" fill="#2e1065"/><circle cx="7" cy="6" r="1" fill="#a78bfa"/><circle cx="7" cy="14" r="1" fill="#a78bfa"/><line x1="11" y1="6" x2="17" y2="6" stroke="#a78bfa" stroke-width="1"/><line x1="11" y1="14" x2="17" y2="14" stroke="#a78bfa" stroke-width="1"/><line x1="12" y1="19" x2="12" y2="22" stroke="#a78bfa" stroke-width="1.5"/></svg>`)}`;
 const svgShipGray = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 20 L6 8 L12 2 L18 8 L18 20 C18 22 6 22 6 20 Z" fill="gray" stroke="#000" stroke-width="1"/><polygon points="12,6 16,16 8,16" fill="#fff" stroke="#000" stroke-width="1"/></svg>`)}`;
 const svgShipRed = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="32" viewBox="0 0 24 24" fill="none"><path d="M6 22 L6 6 L12 2 L18 6 L18 22 Z" fill="#ff2222" stroke="#000" stroke-width="1"/><rect x="8" y="15" width="8" height="4" fill="#880000" stroke="#000" stroke-width="1"/><rect x="8" y="7" width="8" height="6" fill="#444" stroke="#000" stroke-width="1"/></svg>`)}`;
 const svgShipYellow = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="34" viewBox="0 0 24 24" fill="none"><path d="M7 22 L7 6 L12 1 L17 6 L17 22 Z" fill="yellow" stroke="#000" stroke-width="1"/><rect x="9" y="8" width="6" height="8" fill="#555" stroke="#000" stroke-width="1"/><circle cx="12" cy="18" r="1.5" fill="#000"/><line x1="12" y1="18" x2="12" y2="24" stroke="#000" stroke-width="1.5"/></svg>`)}`;
@@ -228,8 +229,34 @@ const MISSION_ICON_MAP: Record<string, string> = {
     'commercial_imaging': 'sat-com', 'space_station': 'sat-station'
 };
 
+// Empty GeoJSON constant — avoids recreating empty objects on every render
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// Imperatively push GeoJSON data to a MapLibre source, bypassing React reconciliation.
+// This is critical for high-volume layers (flights, ships, satellites, fires) where
+// React's prop diffing on thousands of coordinate arrays causes memory pressure.
+function useImperativeSource(map: MapRef | null, sourceId: string, geojson: any, debounceMs = 0) {
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!map) return;
+        const push = () => {
+            const src = map.getSource(sourceId) as any;
+            if (src && typeof src.setData === 'function') {
+                src.setData(geojson || EMPTY_FC);
+            }
+        };
+        if (debounceMs > 0) {
+            if (timerRef.current) clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(push, debounceMs);
+            return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+        }
+        push();
+    }, [map, sourceId, geojson, debounceMs]);
+}
+
 const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, selectedEntity, onMouseCoords, onRightClick, regionDossier, regionDossierLoading, onViewStateChange, measureMode, onMeasureClick, measurePoints, gibsDate, gibsOpacity }: any) => {
     const mapRef = useRef<MapRef>(null);
+    const [mapReady, setMapReady] = useState(false);
     const { theme } = useTheme();
     const mapThemeStyle = useMemo(() => theme === 'light' ? lightStyle : darkStyle, [theme]);
 
@@ -498,6 +525,25 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         };
     }, [activeLayers.internet_outages, data?.internet_outages]);
 
+    const dataCentersGeoJSON = useMemo(() => {
+        if (!activeLayers.datacenters || !data?.datacenters?.length) return null;
+        return {
+            type: 'FeatureCollection' as const,
+            features: data.datacenters.map((dc: any, i: number) => ({
+                type: 'Feature' as const,
+                properties: {
+                    id: `dc-${i}`,
+                    type: 'datacenter',
+                    name: dc.name || 'Unknown',
+                    company: dc.company || '',
+                    city: dc.city || '',
+                    country: dc.country || '',
+                },
+                geometry: { type: 'Point' as const, coordinates: [dc.lng, dc.lat] }
+            }))
+        };
+    }, [activeLayers.datacenters, data?.datacenters]);
+
     // Load Images into the Map Style once loaded
     const onMapLoad = useCallback((e: any) => {
         const map = e.target;
@@ -611,6 +657,9 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         loadImg('fire-cluster-lg', svgFireClusterLarge);
         loadImg('fire-cluster-xl', svgFireClusterXL);
 
+        // Data center icon
+        loadImg('datacenter', svgDataCenter);
+
         // Satellite mission-type icons
         loadImg('sat-mil', makeSatSvg('#ff3333'));
         loadImg('sat-sar', makeSatSvg('#00e5ff'));
@@ -620,6 +669,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         loadImg('sat-com', makeSatSvg('#44ff44'));
         loadImg('sat-station', makeSatSvg('#ffdd00'));
         loadImg('sat-gen', makeSatSvg('#aaaaaa'));
+
+        setMapReady(true);
     }, []);
 
     // Build a set of tracked icao24s to exclude from other flight layers
@@ -1140,7 +1191,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 return {
                     type: 'Feature',
                     properties: {
-                        id: uav.id || i,
+                        id: uav.id || `uav-${i}`,
                         type: 'uav',
                         callsign: uav.callsign,
                         rotation: uav.heading || 0,
@@ -1149,9 +1200,11 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                         country: uav.country || '',
                         uav_type: uav.uav_type || '',
                         alt: uav.alt || 0,
-                        range_km: uav.range_km || 0,
                         wiki: uav.wiki || '',
-                        speed_knots: uav.speed_knots || 0
+                        speed_knots: uav.speed_knots || 0,
+                        icao24: uav.icao24 || '',
+                        registration: uav.registration || '',
+                        squawk: uav.squawk || '',
                     },
                     geometry: { type: 'Point', coordinates: [uav.lng, uav.lat] }
                 };
@@ -1159,31 +1212,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         };
     }, [activeLayers.military, data?.uavs, inView]);
 
-    // UAV operational range circle — only for the selected UAV
-    const uavRangeGeoJSON = useMemo(() => {
-        if (!activeLayers.military || !data?.uavs || selectedEntity?.type !== 'uav') return null;
-        const uav = data.uavs.find((u: any) => u.id === selectedEntity.id);
-        if (!uav?.center || !uav?.range_km) return null;
-        const R = 6371;
-        const rangeDeg = uav.range_km / R * (180 / Math.PI);
-        const centerLat = uav.center[0];
-        const centerLng = uav.center[1];
-        const coords: number[][] = [];
-        for (let i = 0; i <= 64; i++) {
-            const angle = (i / 64) * 2 * Math.PI;
-            const lat = centerLat + rangeDeg * Math.sin(angle);
-            const lng = centerLng + rangeDeg * Math.cos(angle) / Math.cos(centerLat * Math.PI / 180);
-            coords.push([lng, lat]);
-        }
-        return {
-            type: 'FeatureCollection' as const,
-            features: [{
-                type: 'Feature' as const,
-                properties: { name: uav.callsign, range_km: uav.range_km },
-                geometry: { type: 'Polygon' as const, coordinates: [coords] }
-            }]
-        };
-    }, [activeLayers.military, data?.uavs, selectedEntity]);
+    // UAV range circles removed — real ADS-B drones don't have a fixed orbit center
 
     const gdeltGeoJSON = useMemo(() => {
         if (!activeLayers.global_incidents || !data?.gdelt) return null;
@@ -1243,9 +1272,25 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         cctvGeoJSON && 'cctv-layer',
         kiwisdrGeoJSON && 'kiwisdr-layer',
         internetOutagesGeoJSON && 'internet-outages-layer',
+        dataCentersGeoJSON && 'datacenters-layer',
         firmsGeoJSON && 'firms-viirs-layer'
     ].filter(Boolean) as string[];
 
+
+    // --- Imperative source updates for high-volume layers ---
+    // Bypasses React reconciliation of huge GeoJSON FeatureCollections.
+    // The <Source data={EMPTY_FC}> mounts the source; the hook pushes real data.
+    const mapForHook = mapReady ? mapRef.current : null;
+    // Flights & UAVs: immediate (they move fast, stale = visually wrong)
+    useImperativeSource(mapForHook, 'commercial-flights', commFlightsGeoJSON);
+    useImperativeSource(mapForHook, 'private-flights', privFlightsGeoJSON);
+    useImperativeSource(mapForHook, 'private-jets', privJetsGeoJSON);
+    useImperativeSource(mapForHook, 'military-flights', milFlightsGeoJSON);
+    useImperativeSource(mapForHook, 'tracked-flights', trackedFlightsGeoJSON);
+    useImperativeSource(mapForHook, 'uavs', uavGeoJSON);
+    // Satellites & fires: 2s debounce (slow-changing, high feature count)
+    useImperativeSource(mapForHook, 'satellites', satellitesGeoJSON, 2000);
+    useImperativeSource(mapForHook, 'firms-fires', firmsGeoJSON, 2000);
 
     const handleMouseMove = useCallback((evt: any) => {
         if (onMouseCoords) onMouseCoords({ lat: evt.lngLat.lat, lng: evt.lngLat.lng });
@@ -1348,8 +1393,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 )}
 
                 {/* NASA FIRMS VIIRS — fire hotspot icons from FIRMS CSV feed */}
-                {firmsGeoJSON && (
-                    <Source id="firms-fires" type="geojson" data={firmsGeoJSON as any} cluster={true} clusterRadius={40} clusterMaxZoom={10}>
+                {/* firms-fires: data pushed imperatively via useImperativeSource */}
+                    <Source id="firms-fires" type="geojson" data={EMPTY_FC as any} cluster={true} clusterRadius={40} clusterMaxZoom={10}>
                         {/* Cluster fire icons — flame shape to differentiate from Global Incidents circles */}
                         <Layer
                             id="firms-clusters"
@@ -1391,7 +1436,6 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             }}
                         />
                     </Source>
-                )}
 
                 {/* SOLAR TERMINATOR — night overlay */}
                 {activeLayers.day_night && nightGeoJSON && (
@@ -1407,8 +1451,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     </Source>
                 )}
 
-                {commFlightsGeoJSON && (
-                    <Source id="commercial-flights" type="geojson" data={commFlightsGeoJSON as any}>
+                {/* commercial/private/military flights: data pushed imperatively */}
+                    <Source id="commercial-flights" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="commercial-flights-layer"
                             type="symbol"
@@ -1422,10 +1466,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
-                {privFlightsGeoJSON && (
-                    <Source id="private-flights" type="geojson" data={privFlightsGeoJSON as any}>
+                    <Source id="private-flights" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="private-flights-layer"
                             type="symbol"
@@ -1439,10 +1481,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
-                {privJetsGeoJSON && (
-                    <Source id="private-jets" type="geojson" data={privJetsGeoJSON as any}>
+                    <Source id="private-jets" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="private-jets-layer"
                             type="symbol"
@@ -1456,10 +1496,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
-                {milFlightsGeoJSON && (
-                    <Source id="military-flights" type="geojson" data={milFlightsGeoJSON as any}>
+                    <Source id="military-flights" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="military-flights-layer"
                             type="symbol"
@@ -1473,7 +1511,6 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
                 {shipsGeoJSON && (
                     <Source
@@ -1589,8 +1626,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     </Source>
                 )}
 
-                {trackedFlightsGeoJSON && (
-                    <Source id="tracked-flights" type="geojson" data={trackedFlightsGeoJSON as any}>
+                {/* tracked-flights & UAVs: data pushed imperatively */}
+                    <Source id="tracked-flights" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="tracked-flights-layer"
                             type="symbol"
@@ -1604,10 +1641,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
-                {uavGeoJSON && (
-                    <Source id="uavs" type="geojson" data={uavGeoJSON as any}>
+                    <Source id="uavs" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="uav-layer"
                             type="symbol"
@@ -1621,31 +1656,8 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             paint={{ 'icon-opacity': opacityFilter }}
                         />
                     </Source>
-                )}
 
-                {/* UAV Operational Range Circles */}
-                {uavRangeGeoJSON && (
-                    <Source id="uav-ranges" type="geojson" data={uavRangeGeoJSON as any}>
-                        <Layer
-                            id="uav-range-fill"
-                            type="fill"
-                            paint={{
-                                'fill-color': '#ff4444',
-                                'fill-opacity': 0.04
-                            }}
-                        />
-                        <Layer
-                            id="uav-range-border"
-                            type="line"
-                            paint={{
-                                'line-color': '#ff4444',
-                                'line-width': 1,
-                                'line-opacity': 0.3,
-                                'line-dasharray': [4, 4]
-                            }}
-                        />
-                    </Source>
-                )}
+                {/* UAV range circles removed — real ADS-B data has no fixed orbit */}
 
                 {gdeltGeoJSON && (
                     <Source id="gdelt" type="geojson" data={gdeltGeoJSON as any}>
@@ -1704,15 +1716,22 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     );
                 })}
 
-                {/* HTML labels for carriers (orange names) */}
+                {/* HTML labels for carriers (orange names, with ESTIMATED badge for OSINT positions) */}
                 {carriersGeoJSON && !selectedEntity && data?.ships?.map((s: any, i: number) => {
                     if (s.type !== 'carrier' || s.lat == null || s.lng == null) return null;
                     if (!inView(s.lat, s.lng)) return null;
                     const [iLng, iLat] = interpShip(s);
                     return (
                         <Marker key={`carrier-label-${i}`} longitude={iLng} latitude={iLat} anchor="top" offset={[0, 12]} style={{ zIndex: 2 }}>
-                            <div style={{ color: '#ffaa00', fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', textShadow: '0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-                                [[{s.name}]]
+                            <div style={{ fontFamily: 'monospace', textShadow: '0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000', whiteSpace: 'nowrap', pointerEvents: 'none', textAlign: 'center' }}>
+                                <div style={{ color: '#ffaa00', fontSize: '11px', fontWeight: 'bold' }}>
+                                    [[{s.name}]]
+                                </div>
+                                {s.estimated && (
+                                    <div style={{ color: '#ff6644', fontSize: '8px', letterSpacing: '1.5px' }}>
+                                        EST. POSITION — OSINT
+                                    </div>
+                                )}
                             </div>
                         </Marker>
                     );
@@ -2114,9 +2133,64 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     </Source>
                 )}
 
+                {/* Data Center positions */}
+                {dataCentersGeoJSON && (
+                    <Source id="datacenters" type="geojson" data={dataCentersGeoJSON as any} cluster={true} clusterRadius={30} clusterMaxZoom={8}>
+                        {/* Cluster circles */}
+                        <Layer
+                            id="datacenters-clusters"
+                            type="circle"
+                            filter={['has', 'point_count']}
+                            paint={{
+                                'circle-color': '#7c3aed',
+                                'circle-radius': ['step', ['get', 'point_count'], 12, 10, 16, 50, 20],
+                                'circle-opacity': 0.7,
+                                'circle-stroke-width': 1,
+                                'circle-stroke-color': '#a78bfa',
+                            }}
+                        />
+                        <Layer
+                            id="datacenters-cluster-count"
+                            type="symbol"
+                            filter={['has', 'point_count']}
+                            layout={{
+                                'text-field': '{point_count_abbreviated}',
+                                'text-font': ['Noto Sans Bold'],
+                                'text-size': 10,
+                                'text-allow-overlap': true,
+                            }}
+                            paint={{
+                                'text-color': '#e9d5ff',
+                            }}
+                        />
+                        {/* Individual DC icons */}
+                        <Layer
+                            id="datacenters-layer"
+                            type="symbol"
+                            filter={['!', ['has', 'point_count']]}
+                            layout={{
+                                'icon-image': 'datacenter',
+                                'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 6, 0.7, 10, 1.0],
+                                'icon-allow-overlap': true,
+                                'text-field': ['step', ['zoom'], '', 6, ['get', 'name']],
+                                'text-font': ['Noto Sans Regular'],
+                                'text-size': 9,
+                                'text-offset': [0, 1.2],
+                                'text-anchor': 'top',
+                                'text-allow-overlap': false,
+                            }}
+                            paint={{
+                                'text-color': '#c4b5fd',
+                                'text-halo-color': 'rgba(0,0,0,0.9)',
+                                'text-halo-width': 1,
+                            }}
+                        />
+                    </Source>
+                )}
+
                 {/* Satellite positions — mission-type icons */}
-                {satellitesGeoJSON && (
-                    <Source id="satellites" type="geojson" data={satellitesGeoJSON as any}>
+                {/* satellites: data pushed imperatively */}
+                    <Source id="satellites" type="geojson" data={EMPTY_FC as any}>
                         <Layer
                             id="satellites-layer"
                             type="symbol"
@@ -2133,7 +2207,6 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             }}
                         />
                     </Source>
-                )}
 
                 {/* Satellite click popup */}
                 {selectedEntity?.type === 'satellite' && (() => {
@@ -2192,7 +2265,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     );
                 })()}
 
-                {/* UAV click popup */}
+                {/* UAV click popup — real ADS-B detected drones */}
                 {selectedEntity?.type === 'uav' && (() => {
                     const uav = data?.uavs?.find((u: any) => u.id === selectedEntity.id);
                     if (!uav) return null;
@@ -2209,16 +2282,29 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                 fontFamily: 'monospace', fontSize: 11, minWidth: 220, maxWidth: 320
                             }}>
                                 <div style={{ color: '#ff4444', fontWeight: 700, fontSize: 13, marginBottom: 6, letterSpacing: 1 }}>
-                                    ✈️ {uav.callsign}
+                                    {uav.callsign}
                                 </div>
+                                <div style={{ color: '#ff8844', fontSize: 9, marginBottom: 6, letterSpacing: 1.5, textTransform: 'uppercase' as const }}>
+                                    LIVE ADS-B TRANSPONDER
+                                </div>
+                                {uav.aircraft_model && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Model: <span style={{ color: '#fff' }}>{uav.aircraft_model}</span>
+                                    </div>
+                                )}
                                 {uav.uav_type && (
                                     <div style={{ marginBottom: 4 }}>
-                                        Type: <span style={{ color: '#ffcc00' }}>{uav.uav_type}</span>
+                                        Classification: <span style={{ color: '#ffcc00' }}>{uav.uav_type}</span>
                                     </div>
                                 )}
                                 {uav.country && (
                                     <div style={{ marginBottom: 4 }}>
-                                        Country: <span style={{ color: '#fff' }}>{uav.country}</span>
+                                        Registration: <span style={{ color: '#fff' }}>{uav.country}</span>
+                                    </div>
+                                )}
+                                {uav.icao24 && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        ICAO: <span style={{ color: '#888' }}>{uav.icao24}</span>
                                     </div>
                                 )}
                                 <div style={{ marginBottom: 4 }}>
@@ -2229,9 +2315,9 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                         Speed: <span style={{ color: '#00e5ff' }}>{uav.speed_knots} kn</span>
                                     </div>
                                 )}
-                                {uav.range_km > 0 && (
+                                {uav.squawk && (
                                     <div style={{ marginBottom: 4 }}>
-                                        Operational Range: <span style={{ color: '#ff8844' }}>{uav.range_km?.toLocaleString()} km</span>
+                                        Squawk: <span style={{ color: '#888' }}>{uav.squawk}</span>
                                     </div>
                                 )}
                                 {uav.wiki && (
@@ -2243,6 +2329,135 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                         </Popup>
                     );
                 })()}
+
+                {/* Ship / carrier click popup */}
+                {selectedEntity?.type === 'ship' && (() => {
+                    const ship = data?.ships?.[selectedEntity.id as number];
+                    if (!ship) return null;
+                    const [iLng, iLat] = interpShip(ship);
+                    return (
+                        <Popup
+                            longitude={iLng} latitude={iLat}
+                            closeButton={false} closeOnClick={false}
+                            onClose={() => onEntityClick?.(null)}
+                            anchor="bottom" offset={12}
+                        >
+                            <div style={{
+                                background: 'rgba(10,14,26,0.95)', border: `1px solid ${ship.type === 'carrier' ? 'rgba(255,170,0,0.5)' : 'rgba(59,130,246,0.4)'}`,
+                                borderRadius: 6, padding: '10px 14px', color: '#e0e6f0',
+                                fontFamily: 'monospace', fontSize: 11, minWidth: 220, maxWidth: 320
+                            }}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div style={{ color: ship.type === 'carrier' ? '#ffaa00' : '#3b82f6', fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>
+                                        {ship.name || 'UNKNOWN VESSEL'}
+                                    </div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                {ship.estimated && (
+                                    <div style={{ color: '#ff6644', fontSize: 9, marginBottom: 6, letterSpacing: 1.5, textTransform: 'uppercase' as const, borderBottom: '1px solid rgba(255,102,68,0.3)', paddingBottom: 4 }}>
+                                        ESTIMATED POSITION — {ship.source || 'OSINT DERIVED'}
+                                    </div>
+                                )}
+                                {ship.type && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Type: <span style={{ color: '#fff', textTransform: 'capitalize' as const }}>{ship.type.replace('_', ' ')}</span>
+                                    </div>
+                                )}
+                                {ship.mmsi && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        MMSI: <span style={{ color: '#888' }}>{ship.mmsi}</span>
+                                    </div>
+                                )}
+                                {ship.imo && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        IMO: <span style={{ color: '#888' }}>{ship.imo}</span>
+                                    </div>
+                                )}
+                                {ship.callsign && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Callsign: <span style={{ color: '#00e5ff' }}>{ship.callsign}</span>
+                                    </div>
+                                )}
+                                {ship.country && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Flag: <span style={{ color: '#fff' }}>{ship.country}</span>
+                                    </div>
+                                )}
+                                {ship.destination && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Destination: <span style={{ color: '#44ff88' }}>{ship.destination}</span>
+                                    </div>
+                                )}
+                                {typeof ship.sog === 'number' && ship.sog > 0 && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Speed: <span style={{ color: '#00e5ff' }}>{ship.sog.toFixed(1)} kn</span>
+                                    </div>
+                                )}
+                                {ship.heading != null && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Heading: <span style={{ color: '#888' }}>{Math.round(ship.heading)}°</span>
+                                    </div>
+                                )}
+                                {ship.last_osint_update && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Last OSINT Update: <span style={{ color: '#888' }}>{new Date(ship.last_osint_update).toLocaleDateString()}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
+                {/* Data Center click popup */}
+                {selectedEntity?.type === 'datacenter' && (() => {
+                    const dc = data?.datacenters?.find((_: any, i: number) => `dc-${i}` === selectedEntity.id);
+                    if (!dc) return null;
+                    // Check if any internet outage is in the same country
+                    const outagesInCountry = (data?.internet_outages || []).filter((o: any) =>
+                        o.country_name && dc.country && o.country_name.toLowerCase() === dc.country.toLowerCase()
+                    );
+                    return (
+                        <Popup
+                            longitude={dc.lng}
+                            latitude={dc.lat}
+                            closeButton={false}
+                            closeOnClick={false}
+                            onClose={() => onEntityClick?.(null)}
+                            className="threat-popup"
+                            maxWidth="280px"
+                        >
+                            <div style={{ background: '#1a1035', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(167,139,250,0.4)', fontFamily: 'monospace', fontSize: 11, color: '#e9d5ff', minWidth: 200 }}>
+                                <div style={{ fontWeight: 'bold', fontSize: 13, color: '#a78bfa', marginBottom: 6, borderBottom: '1px solid rgba(167,139,250,0.2)', paddingBottom: 4 }}>
+                                    {dc.name}
+                                </div>
+                                {dc.company && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Operator: <span style={{ color: '#c4b5fd' }}>{dc.company}</span>
+                                    </div>
+                                )}
+                                {dc.city && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Location: <span style={{ color: '#fff' }}>{dc.city}{dc.country ? `, ${dc.country}` : ''}</span>
+                                    </div>
+                                )}
+                                {!dc.city && dc.country && (
+                                    <div style={{ marginBottom: 4 }}>
+                                        Country: <span style={{ color: '#fff' }}>{dc.country}</span>
+                                    </div>
+                                )}
+                                {outagesInCountry.length > 0 && (
+                                    <div style={{ marginTop: 6, padding: '4px 8px', background: 'rgba(255,0,0,0.15)', border: '1px solid rgba(255,80,80,0.4)', borderRadius: 4, fontSize: 10, color: '#ff6b6b' }}>
+                                        OUTAGE IN REGION — {outagesInCountry.map((o: any) => `${o.region_name} (${o.severity}%)`).join(', ')}
+                                    </div>
+                                )}
+                                <div style={{ marginTop: 6, fontSize: 9, color: '#7c3aed', letterSpacing: '0.05em' }}>
+                                    DATA CENTER
+                                </div>
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
                 {
                     selectedEntity?.type === 'gdelt' && data?.gdelt?.[selectedEntity.id as number] && (
                         <Popup

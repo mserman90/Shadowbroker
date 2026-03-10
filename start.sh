@@ -23,7 +23,14 @@ else
     exit 1
 fi
 
-echo "[*] Found $($PYTHON_CMD --version 2>&1)"
+PYVER=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
+echo "[*] Found Python $PYVER"
+PY_MINOR=$(echo "$PYVER" | cut -d. -f2)
+if [ "$PY_MINOR" -ge 13 ] 2>/dev/null; then
+    echo "[!] WARNING: Python $PYVER detected. Some packages may fail to build."
+    echo "[!] Recommended: Python 3.10, 3.11, or 3.12."
+    echo ""
+fi
 
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -42,7 +49,7 @@ fi
 
 source venv/bin/activate
 echo "[*] Installing Python dependencies (this may take a minute)..."
-pip install -r requirements.txt
+pip install -q -r requirements.txt
 if [ $? -ne 0 ]; then
     echo ""
     echo "[!] ERROR: pip install failed. See errors above."

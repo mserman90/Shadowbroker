@@ -2,43 +2,45 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Flame, Sun, Wifi, Activity, Bug } from "lucide-react";
+import { X, Rss, Server, Zap, Shield, Bug } from "lucide-react";
 
-const CURRENT_VERSION = "0.5";
+const CURRENT_VERSION = "0.6";
 const STORAGE_KEY = `shadowbroker_changelog_v${CURRENT_VERSION}`;
 
 const NEW_FEATURES = [
     {
-        icon: <Flame size={14} className="text-orange-400" />,
-        title: "NASA FIRMS Fire Hotspots (24h)",
-        desc: "5,000+ global thermal anomalies from NOAA-20 VIIRS satellite. Flame-shaped icons color-coded by fire radiative power — yellow (low), orange, red, dark red (intense). Clusters show fire counts.",
+        icon: <Rss size={14} className="text-orange-400" />,
+        title: "Custom News Feed Manager",
+        desc: "Add, remove, and prioritize up to 20 RSS intelligence sources directly from the Settings panel. Assign weight levels (1-5) to control feed importance. No more editing Python files — your custom feeds persist across restarts.",
         color: "orange",
     },
     {
-        icon: <Sun size={14} className="text-yellow-400" />,
-        title: "Space Weather Badge",
-        desc: "Live NOAA geomagnetic storm indicator in the bottom status bar. Color-coded Kp index: green (quiet), yellow (active), red (storm G1-G5). Sourced from SWPC planetary K-index.",
+        icon: <Server size={14} className="text-purple-400" />,
+        title: "Global Data Center Map Layer",
+        desc: "2,000+ data centers plotted worldwide from a curated dataset. Click any DC for operator details — and if an internet outage is detected in the same country, the popup flags it automatically.",
+        color: "purple",
+    },
+    {
+        icon: <Zap size={14} className="text-yellow-400" />,
+        title: "Imperative Map Rendering",
+        desc: "High-volume layers (flights, satellites, fire hotspots) now bypass React reconciliation and update the map directly via setData(). Debounced updates on dense layers. Smoother panning and zooming under load.",
         color: "yellow",
     },
     {
-        icon: <Wifi size={14} className="text-gray-400" />,
-        title: "Internet Outage Monitoring",
-        desc: "Regional internet connectivity alerts from Georgia Tech IODA. Grey markers show affected regions with severity percentage — powered by BGP and active probing data. No false positives.",
-        color: "gray",
-    },
-    {
-        icon: <Activity size={14} className="text-cyan-400" />,
-        title: "Enhanced Layer Differentiation",
-        desc: "Fire hotspots use distinct flame icons (not circles) to prevent confusion with Global Incidents. Internet outages use grey markers. Each layer is now instantly recognizable at a glance.",
+        icon: <Shield size={14} className="text-cyan-400" />,
+        title: "Enhanced Health Observability",
+        desc: "The /api/health endpoint now reports per-source freshness timestamps and counts for all data layers — UAVs, FIRMS fires, LiveUAMap, GDELT, and more. Better uptime monitoring for self-hosters.",
         color: "cyan",
     },
 ];
 
 const BUG_FIXES = [
-    "All data sourced from verified OSINT feeds — no fabricated or interpolated data points",
-    "Internet outages filtered to reliable datasources only (BGP, ping) — no misleading telescope data",
-    "Fire clusters use flame-shaped icons instead of circles for clear visual separation",
-    "MapLibre font errors resolved — switched to Noto Sans (universally available)",
+    "Settings panel now has tabbed UI — API Keys and News Feeds on separate tabs",
+    "Data center coordinates fixed for 187 Southern Hemisphere entries (were mirrored north of equator)",
+    "Docker networking: CORS_ORIGINS env var properly passed through docker-compose",
+    "Start scripts warn on Python 3.13+ compatibility issues before install",
+    "Satellite and fire hotspot layers debounced (2s) to prevent render thrashing",
+    "Entries with invalid geocoded coordinates automatically filtered out",
 ];
 
 export function useChangelog() {

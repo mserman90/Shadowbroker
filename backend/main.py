@@ -1,15 +1,43 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from services.data_fetcher import start_scheduler, stop_scheduler, get_latest_data
+from services.data_fetcher import start_scheduler, stop_scheduler, get_latest_data, source_timestamps
 from services.ais_stream import start_ais_stream, stop_ais_stream
 from services.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
 import uvicorn
 import logging
 import hashlib
 import json as json_mod
+import os
+import socket
 
 logging.basicConfig(level=logging.INFO)
+
+
+def _build_cors_origins():
+    """Build a CORS origins whitelist: localhost + LAN IPs + env overrides.
+    Falls back to wildcard only if auto-detection fails entirely."""
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    # Add this machine's LAN IPs (covers common home/office setups)
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ("127.0.0.1", "0.0.0.0"):
+                origins.append(f"http://{ip}:3000")
+                origins.append(f"http://{ip}:8000")
+    except Exception:
+        pass
+    # Allow user override via CORS_ORIGINS env var (comma-separated)
+    extra = os.environ.get("CORS_ORIGINS", "")
+    if extra:
+        origins.extend([o.strip() for o in extra.split(",") if o.strip()])
+    return list(set(origins))  # deduplicate
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,7 +57,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Must be permissive — users access from localhost, LAN IPs, Docker, custom ports
+    allow_origins=_build_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,11 +92,12 @@ async def live_data_fast(request: Request):
         "uavs": d.get("uavs", []),
         "liveuamap": d.get("liveuamap", []),
         "gps_jamming": d.get("gps_jamming", []),
+        "freshness": dict(source_timestamps),
     }
     # ETag includes last_updated timestamp so it changes on every data refresh,
     # not just when item counts change (old bug: positions went stale)
     last_updated = d.get("last_updated", "")
-    counts = "|".join(f"{k}:{len(v) if isinstance(v, list) else 0}" for k, v in payload.items())
+    counts = "|".join(f"{k}:{len(v) if isinstance(v, list) else 0}" for k, v in payload.items() if k != "freshness")
     etag = hashlib.md5(f"{last_updated}|{counts}".encode()).hexdigest()[:16]
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
@@ -96,11 +125,13 @@ async def live_data_slow(request: Request):
         "kiwisdr": d.get("kiwisdr", []),
         "space_weather": d.get("space_weather"),
         "internet_outages": d.get("internet_outages", []),
-        "firms_fires": d.get("firms_fires", [])
+        "firms_fires": d.get("firms_fires", []),
+        "datacenters": d.get("datacenters", []),
+        "freshness": dict(source_timestamps),
     }
     # ETag based on last_updated + item counts
     last_updated = d.get("last_updated", "")
-    counts = "|".join(f"{k}:{len(v) if isinstance(v, list) else 0}" for k, v in payload.items())
+    counts = "|".join(f"{k}:{len(v) if isinstance(v, list) else 0}" for k, v in payload.items() if k != "freshness")
     etag = hashlib.md5(f"slow|{last_updated}|{counts}".encode()).hexdigest()[:16]
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
@@ -131,7 +162,12 @@ async def health_check():
             "earthquakes": len(d.get("earthquakes", [])),
             "cctv": len(d.get("cctv", [])),
             "news": len(d.get("news", [])),
+            "uavs": len(d.get("uavs", [])),
+            "firms_fires": len(d.get("firms_fires", [])),
+            "liveuamap": len(d.get("liveuamap", [])),
+            "gdelt": len(d.get("gdelt", [])),
         },
+        "freshness": dict(source_timestamps),
         "uptime_seconds": round(time.time() - _start_time),
     }
 
@@ -218,6 +254,34 @@ async def api_update_key(body: ApiKeyUpdate):
     if ok:
         return {"status": "updated", "env_key": body.env_key}
     return {"status": "error", "message": "Failed to update .env file"}
+
+# ---------------------------------------------------------------------------
+# News Feed Configuration
+# ---------------------------------------------------------------------------
+from services.news_feed_config import get_feeds, save_feeds, reset_feeds
+
+@app.get("/api/settings/news-feeds")
+async def api_get_news_feeds():
+    return get_feeds()
+
+@app.put("/api/settings/news-feeds")
+async def api_save_news_feeds(request: Request):
+    body = await request.json()
+    ok = save_feeds(body)
+    if ok:
+        return {"status": "updated", "count": len(body)}
+    return Response(
+        content=json_mod.dumps({"status": "error", "message": "Validation failed (max 20 feeds, each needs name/url/weight 1-5)"}),
+        status_code=400,
+        media_type="application/json",
+    )
+
+@app.post("/api/settings/news-feeds/reset")
+async def api_reset_news_feeds():
+    ok = reset_feeds()
+    if ok:
+        return {"status": "reset", "feeds": get_feeds()}
+    return {"status": "error", "message": "Failed to reset feeds"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
