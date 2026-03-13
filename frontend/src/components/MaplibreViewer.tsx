@@ -19,7 +19,7 @@ import {
     svgTanker, svgRecon, svgPlanePink, svgPlaneAlertRed, svgPlaneDarkBlue,
     svgPlaneWhiteAlert, svgHeliPink, svgHeliAlertRed, svgHeliDarkBlue,
     svgHeliBlue, svgHeliLime, svgHeliWhiteAlert, svgPlaneBlack, svgHeliBlack,
-    svgDrone, svgDataCenter, svgShipGray, svgShipRed, svgShipYellow,
+    svgDrone, svgDataCenter, svgRadioTower, svgShipGray, svgShipRed, svgShipYellow,
     svgShipBlue, svgShipWhite, svgCarrier, svgCctv, svgWarning, svgThreat,
     svgTriangleYellow, svgTriangleRed,
     svgFireYellow, svgFireOrange, svgFireRed, svgFireDarkRed,
@@ -423,6 +423,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         // Deferred icons — for off-by-default layers and rare variants
         // Loaded in next frame to avoid blocking initial map render
         setTimeout(() => {
+            loadImg('svgRadioTower', svgRadioTower);
             loadImg('svgPlanePink', svgPlanePink);
             loadImg('svgPlaneAlertRed', svgPlaneAlertRed);
             loadImg('svgPlaneDarkBlue', svgPlaneDarkBlue);
@@ -1763,38 +1764,37 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     </Source>
                 )}
 
-                {/* KiwiSDR Receivers — clustered amber dots */}
+                {/* KiwiSDR Receivers — radio tower icons */}
                 {kiwisdrGeoJSON && (
                     <Source id="kiwisdr" type="geojson" data={kiwisdrGeoJSON as any} cluster={true} clusterRadius={50} clusterMaxZoom={14}>
+                        {/* Cluster glow ring */}
                         <Layer
                             id="kiwisdr-clusters"
                             type="circle"
                             filter={['has', 'point_count']}
                             paint={{
-                                'circle-color': '#f59e0b',
-                                'circle-radius': ['step', ['get', 'point_count'], 14, 10, 18, 50, 24, 200, 30],
-                                'circle-opacity': 0.8,
-                                'circle-stroke-width': 2,
-                                'circle-stroke-color': '#d97706'
+                                'circle-color': 'rgba(245, 158, 11, 0.15)',
+                                'circle-radius': ['step', ['get', 'point_count'], 18, 10, 22, 50, 28, 200, 34],
+                                'circle-stroke-width': 1.5,
+                                'circle-stroke-color': 'rgba(245, 158, 11, 0.5)'
                             }}
                         />
                         <Layer
                             id="kiwisdr-cluster-count"
                             type="symbol"
                             filter={['has', 'point_count']}
-                            layout={{ 'text-field': '{point_count_abbreviated}', 'text-size': 12, 'text-allow-overlap': true }}
-                            paint={{ 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1 }}
+                            layout={{ 'text-field': '{point_count_abbreviated}', 'text-size': 11, 'text-allow-overlap': true, 'text-font': ['Noto Sans Bold'] }}
+                            paint={{ 'text-color': '#f59e0b', 'text-halo-color': '#000000', 'text-halo-width': 1.5 }}
                         />
+                        {/* Individual tower icons */}
                         <Layer
                             id="kiwisdr-layer"
-                            type="circle"
+                            type="symbol"
                             filter={['!', ['has', 'point_count']]}
-                            paint={{
-                                'circle-color': '#f59e0b',
-                                'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 2, 8, 4, 14, 6],
-                                'circle-opacity': 0.9,
-                                'circle-stroke-width': 1,
-                                'circle-stroke-color': '#d97706'
+                            layout={{
+                                'icon-image': 'svgRadioTower',
+                                'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 8, 0.8, 14, 1.0],
+                                'icon-allow-overlap': true,
                             }}
                         />
                     </Source>
