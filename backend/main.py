@@ -519,5 +519,77 @@ async def system_update(request: Request):
     threading.Timer(2.0, schedule_restart, args=[project_root]).start()
     return result
 
+    # ---------------------------------------------------------------------------
+# Aircraft Database Search (ADSBDB via RapidAPI)
+# ---------------------------------------------------------------------------
+
+from services.fetchers.adsbdb import search_aircraft, get_aircraft_by_registration
+from services.fetchers.adsbexchange import search_flights, get_api_status
+
+@app.get("/api/aircraft/search")
+@limiter.limit("60/minute")
+async def api_aircraft_search(
+    request: Request,
+    q: str = Query(..., description="Search query (registration, type, operator)"),
+    category: Optional[str] = Query(None, description="Optional category filter"),
+    location: Optional[str] = Query(None, description="Optional location filter"),
+    limit: int = Query(20, ge=1, le=100, description="Max results (1-100)")
+):
+    """Search aircraft database via ADSBDB RapidAPI.
+    
+    Examples:
+      - /api/aircraft/search?q=TC-JRO  (by registration)
+      - /api/aircraft/search?q=B777&limit=10  (by type)
+      - /api/aircraft/search?q=Emirates&limit=5  (by operator)
+    """
+    return search_aircraft(query=q, category=category, location=location, limit=limit)
+
+@app.get("/api/aircraft/registration/{registration}")
+@limiter.limit("60/minute")
+async def api_aircraft_by_registration(
+    request: Request,
+    registration: str
+):
+    """Get aircraft details by registration (tail number).
+    
+    Example: /api/aircraft/registration/N12345
+    """
+    return get_aircraft_by_registration(registration=registration)
+
+
+    # -------------------------------------------------------------------------------
+# Flight Tracking (ADSB Exchange via RapidAPI)
+# -------------------------------------------------------------------------------
+
+@app.get("/api/flights/search")
+@limiter.limit("60/minute")
+async def api_flight_search(
+    request: Request,
+    icao24: Optional[str] = Query(None, description="Aircraft ICAO24 hex code"),
+    lat: Optional[float] = Query(None, description="Latitude for area search"),
+    lon: Optional[float] = Query(None, description="Longitude for area search"),
+    dist: Optional[int] = Query(25, description="Distance radius in nm"),
+    limit: int = Query(50, ge=1, le=200, description="Max results (1-200)")
+):
+    """Search live flight tracking data via ADSB Exchange RapidAPI.
+    
+    Examples:
+        - /api/flights/search?icao24=A12345  (by aircraft ICAO24)
+        - /api/flights/search?lat=40.7128&lon=-74.0060&dist=50  (by location)
+    """
+    
+    return search_flights(icao24=icao24, lat=lat, lon=lon, dist=dist, limit=limit)
+
+
+@app.get("/api/flights/status")
+@limiter.limit("60/minute")
+async def api_flight_status(request: Request):
+    """Get ADSB Exchange API health status and usage limits.
+    
+    Example: /api/flights/status
+    """
+    
+    return get_api_status()
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
