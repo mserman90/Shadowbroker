@@ -23,7 +23,9 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-map-gl": "^8.1.0",
-    "satellite.js": "^6.0.2"
+    "satellite.js": "^6.0.2",
+    "cytoscape": "^3.28.1",
+    "cytoscape-cose-bilkent": "^4.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -39,6 +41,7 @@
     "jsdom": "^28.1.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "@types/cytoscape": "^3.21.7"
   }
 }
