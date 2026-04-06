@@ -321,7 +321,8 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
     cyRef.current = cytoscape({
       container: cyContainerRef.current,
       elements,
-      style: [
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      style: ([
         /* Olay düğümleri */
         { selector: 'node[type="event"]', style: {
           "background-color": "#cbd5e1",
@@ -332,7 +333,7 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
           "shadow-blur": 8, "shadow-color": "#e2e8f055",
           "shadow-offset-x": 0, "shadow-offset-y": 0, "shadow-opacity": 0.7,
           "transition-property": "background-color, border-color, width, height, opacity",
-          "transition-duration": "200ms",
+          "transition-duration": 200,
         }},
         /* Canlı olay düğümleri */
         { selector: 'node[type="event"][live="1"]', style: {
@@ -359,7 +360,7 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
           "shadow-blur": 18, "shadow-color": "#22c55e",
           "shadow-offset-x": 0, "shadow-offset-y": 0, "shadow-opacity": 0.55,
           "transition-property": "background-color, border-color, width, height, opacity",
-          "transition-duration": "200ms",
+          "transition-duration": 200,
         }},
         /* Canlı kategori düğümleri */
         { selector: 'node#cat-live-ucdp, node#cat-live-news', style: {
@@ -372,7 +373,7 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
           width: 0.7, "line-color": "#0f2a1a",
           opacity: 0.55, "curve-style": "bezier",
           "transition-property": "line-color, opacity, width",
-          "transition-duration": "200ms",
+          "transition-duration": 200,
         }},
         /* Vurgulanan olay */
         { selector: 'node.highlighted[type="event"]', style: {
@@ -400,8 +401,9 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
         { selector: "edge.highlighted", style: {
           "line-color": "#22c55e44", opacity: 0.4, width: 1.2,
         }},
-      ],
-      layout: {
+      ] as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      layout: ({
         name: "cose-bilkent",
         animate: true,
         animationDuration: 900,
@@ -415,7 +417,7 @@ const SpyGraph: React.FC<SpyGraphProps> = ({
         tile: true,
         tilingPaddingVertical: 10,
         tilingPaddingHorizontal: 10,
-      },
+      } as any),
       userZoomingEnabled: true,
       userPanningEnabled: true,
       boxSelectionEnabled: false,
