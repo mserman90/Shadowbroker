@@ -227,8 +227,9 @@ class GlobalOSMCrawlingIngestor(BaseCCTVIngestor):
                     except (ValueError, TypeError):
                         bearing = 0
                         
-                    mapbox_key = "YOUR_MAPBOX_TOKEN_HERE"
-                    mapbox_url = f"https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/{lon},{lat},18,{bearing},60/600x400?access_token={mapbox_key}"
+                                    # Use OpenStreetMap tile as keyless satellite-style image
+                osm_zoom = 18
+                osm_url = f"https://www.openstreetmap.org/export/embed.html?bbox={lon-0.001},{lat-0.001},{lon+0.001},{lat+0.001}&layer=hot&marker={lat},{lon}"
                     
                     cameras.append({
                         "id": f"OSM-{cam_id}",
@@ -236,7 +237,7 @@ class GlobalOSMCrawlingIngestor(BaseCCTVIngestor):
                         "lat": lat,
                         "lon": lon,
                         "direction_facing": item.get("tags", {}).get("surveillance:type", "Street Level Camera"),
-                        "media_url": mapbox_url,
+                                    "media_url": osm_url,
                         "refresh_rate_seconds": 3600
                     })
             return cameras
@@ -256,7 +257,7 @@ def _detect_media_type(url: str) -> str:
         return "mjpeg"
     if '.m3u8' in url_lower or 'hls' in url_lower:
         return "hls"
-    if any(kw in url_lower for kw in ['embed', 'maps/embed', 'iframe']):
+        if any(kw in url_lower for kw in ['embed', 'maps/embed', 'iframe', 'openstreetmap.org/export/embed']):
         return "embed"
     if 'mapbox.com' in url_lower or 'satellite' in url_lower:
         return "satellite"

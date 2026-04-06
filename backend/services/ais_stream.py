@@ -409,6 +409,10 @@ def start_ais_stream():
     if _ws_thread and _ws_thread.is_alive():
         logger.info("AIS Stream already running")
         return
+            # --- Keyless mode: skip AIS if no API key configured ---
+    if not API_KEY:
+        logger.warning("AIS_API_KEY not set — AIS vessel stream disabled (keyless mode). Vessels will show empty.")
+        return
     
     # Load cached vessel data from disk
     _load_cache()
