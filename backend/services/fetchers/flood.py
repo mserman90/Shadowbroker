@@ -122,3 +122,6 @@ def fetch_flood_forecasts(gauge_id: str) -> dict:
     except Exception as e:
         logger.error(f"Flood forecast fetch error for {gauge_id}: {e}")
     return {}
+
+# Backward-compat alias — data_fetcher.py uses this name
+fetch_flood_data = fetch_flood_gauges
