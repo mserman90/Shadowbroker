@@ -32,7 +32,15 @@ latest_data = {
     "firms_fires": [],
     "datacenters": [],
     "military_bases": [],
-    "power_plants": []
+    "power_plants": [],
+    # New OSINT sources
+    "ucdp_events": [],
+    "cap_alerts": [],
+    "cap_alerts_all": [],
+    "flood_gauges": [],
+    "atc_streams": {},
+    "nasa_fires": {},
+    "eosdis_data": {},
 }
 
 # Per-source freshness timestamps

@@ -307,6 +307,14 @@ async def live_data_slow(request: Request,
         "datacenters": _f(d.get("datacenters", [])),
         "military_bases": _f(d.get("military_bases", [])),
         "power_plants": _f(d.get("power_plants", [])),
+        # OSINT overlay sources
+        "ucdp_events": _f(d.get("ucdp_events", [])),
+        "cap_alerts": _f(d.get("cap_alerts", [])),
+        "cap_alerts_all": d.get("cap_alerts_all", []),
+        "flood_gauges": _f(d.get("flood_gauges", [])),
+        "atc_streams": d.get("atc_streams", {}),
+        "nasa_fires": d.get("nasa_fires", {}),
+        "eosdis_data": d.get("eosdis_data", {}),
         "freshness": dict(source_timestamps),
     }
     bbox_tag = f"{s},{w},{n},{e}" if has_bbox else "full"
@@ -339,11 +347,80 @@ async def health_check(request: Request):
             "firms_fires": len(d.get("firms_fires", [])),
             "liveuamap": len(d.get("liveuamap", [])),
             "gdelt": len(d.get("gdelt", [])),
+            # OSINT overlay sources
+            "ucdp_events": len(d.get("ucdp_events", [])),
+            "cap_alerts": len(d.get("cap_alerts", [])),
+            "flood_gauges": len(d.get("flood_gauges", [])),
+            "atc_streams": d.get("atc_streams", {}).get("total", 0),
+            "nasa_fires": d.get("nasa_fires", {}).get("total", 0),
+            "eosdis_configured": d.get("eosdis_data", {}).get("api_key_configured", False),
         },
         "freshness": dict(source_timestamps),
         "uptime_seconds": round(time.time() - _start_time),
     }
 
+
+@app.get("/api/health/sources")
+@limiter.limit("30/minute")
+async def health_sources(request: Request):
+    """Detailed per-source health: record counts, last-fresh timestamps, and staleness flags."""
+    import time as _time
+    d = get_latest_data()
+    now = _time.time()
+    freshness = dict(source_timestamps)
+
+    def _age(key):
+        ts = freshness.get(key)
+        if not ts:
+            return None
+        from datetime import datetime
+        try:
+            delta = now - datetime.fromisoformat(ts).timestamp()
+            return round(delta)
+        except Exception:
+            return None
+
+    def _status(key, stale_after_s=600):
+        age = _age(key)
+        if age is None:
+            return "no_data"
+        return "ok" if age < stale_after_s else "stale"
+
+    sources = {
+        # Fast tier (stale >120s)
+        "flights":          {"count": len(d.get("commercial_flights", [])), "age_s": _age("flights"),          "status": _status("flights", 120)},
+        "military_flights": {"count": len(d.get("military_flights", [])),  "age_s": _age("military_flights"), "status": _status("military_flights", 120)},
+        "ships":            {"count": len(d.get("ships", [])),             "age_s": _age("ships"),             "status": _status("ships", 120)},
+        "satellites":       {"count": len(d.get("satellites", [])),        "age_s": _age("satellites"),        "status": _status("satellites", 120)},
+        # Slow tier (stale >600s)
+        "news":             {"count": len(d.get("news", [])),              "age_s": _age("news"),              "status": _status("news", 600)},
+        "earthquakes":      {"count": len(d.get("earthquakes", [])),       "age_s": _age("earthquakes"),       "status": _status("earthquakes", 600)},
+        "firms_fires":      {"count": len(d.get("firms_fires", [])),       "age_s": _age("firms_fires"),       "status": _status("firms_fires", 600)},
+        "gdelt":            {"count": len(d.get("gdelt", [])),             "age_s": _age("gdelt"),             "status": _status("gdelt", 1200)},
+        "internet_outages": {"count": len(d.get("internet_outages", [])), "age_s": _age("internet_outages"),  "status": _status("internet_outages", 600)},
+        "kiwisdr":          {"count": len(d.get("kiwisdr", [])),           "age_s": _age("kiwisdr"),           "status": _status("kiwisdr", 600)},
+        "cctv":             {"count": len(d.get("cctv", [])),              "age_s": _age("cctv"),              "status": _status("cctv", 600)},
+        "datacenters":      {"count": len(d.get("datacenters", [])),       "age_s": _age("datacenters"),       "status": _status("datacenters", 600)},
+        "military_bases":   {"count": len(d.get("military_bases", [])),    "age_s": _age("military_bases"),    "status": _status("military_bases", 600)},
+        "power_plants":     {"count": len(d.get("power_plants", [])),      "age_s": _age("power_plants"),      "status": _status("power_plants", 600)},
+        # OSINT overlay sources
+        "ucdp_events":      {"count": len(d.get("ucdp_events", [])),       "age_s": _age("ucdp_events"),       "status": _status("ucdp_events", 7200)},
+        "cap_alerts":       {"count": len(d.get("cap_alerts", [])),        "age_s": _age("cap_alerts"),        "status": _status("cap_alerts", 900)},
+        "flood_gauges":     {"count": len(d.get("flood_gauges", [])),      "age_s": _age("flood_gauges"),      "status": _status("flood_gauges", 3600)},
+        "atc_streams":      {"count": d.get("atc_streams", {}).get("total", 0), "age_s": _age("atc_streams"), "status": _status("atc_streams", 600)},
+        "nasa_fires":       {"count": d.get("nasa_fires", {}).get("total", 0),  "age_s": _age("nasa_fires"),  "status": _status("nasa_fires", 600)},
+        "eosdis_data":      {"configured": d.get("eosdis_data", {}).get("api_key_configured", False), "age_s": _age("eosdis_data"), "status": _status("eosdis_data", 600)},
+    }
+
+    stale_count = sum(1 for v in sources.values() if v.get("status") in ("stale", "no_data"))
+    overall = "degraded" if stale_count > 3 else ("warning" if stale_count > 0 else "ok")
+
+    return {
+        "overall": overall,
+        "stale_sources": stale_count,
+        "sources": sources,
+        "checked_at": __import__('datetime').datetime.utcnow().isoformat(),
+    }
 
 
 from services.radio_intercept import get_top_broadcastify_feeds, get_openmhz_systems, get_recent_openmhz_calls, find_nearest_openmhz_system
