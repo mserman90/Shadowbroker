@@ -7,7 +7,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   transpilePackages: ['react-map-gl', 'mapbox-gl', 'maplibre-gl'],
-  output: "standalone",
+  // Vercel sets VERCEL=1 automatically → skip standalone (Vercel handles output natively).
+  // Docker builds don't set VERCEL → standalone output is used by the Dockerfile.
+  ...(process.env.VERCEL ? {} : { output: "standalone" }),
 };
 
 export default nextConfig;
