@@ -2217,6 +2217,132 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                         );
                 })()}
 
+                {/* ── Flight popups (commercial / private / jet / military / tracked) ── */}
+                {(['flight','private_flight','military_flight','private_jet','tracked_flight'] as const).includes(selectedEntity?.type as any) && (() => {
+                    const t = selectedEntity!.type;
+                    let flight: any = null;
+                    let color = '#00c8ff', label = 'COMMERCIAL FLIGHT';
+                    if (t === 'flight')          { flight = (data?.commercial_flights as any[])?.find(f => f.icao24 === selectedEntity!.id || f.callsign === selectedEntity!.id); color = '#00c8ff'; label = 'COMMERCIAL FLIGHT'; }
+                    else if (t === 'private_flight') { flight = (data?.private_flights as any[])?.find(f => f.icao24 === selectedEntity!.id || f.callsign === selectedEntity!.id); color = '#a855f7'; label = 'PRIVATE FLIGHT'; }
+                    else if (t === 'military_flight') { flight = (data?.military_flights as any[])?.find(f => f.icao24 === selectedEntity!.id || f.callsign === selectedEntity!.id); color = '#ef4444'; label = 'MILITARY AIRCRAFT'; }
+                    else if (t === 'private_jet') { flight = (data?.private_jets as any[])?.find(f => f.icao24 === selectedEntity!.id || f.callsign === selectedEntity!.id); color = '#f59e0b'; label = 'PRIVATE JET'; }
+                    else if (t === 'tracked_flight') { flight = (data?.tracked_flights as any[])?.find(f => f.icao24 === selectedEntity!.id || f.callsign === selectedEntity!.id); color = '#f97316'; label = 'TRACKED AIRCRAFT'; }
+                    if (!flight) return null;
+                    return (
+                        <Popup longitude={flight.lng} latitude={flight.lat} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} anchor="bottom" offset={12}>
+                            <div className="map-popup" style={{ border: `1px solid ${color}40` }}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="map-popup-title" style={{ color }}>✈ {flight.callsign || flight.icao24 || '?'}</div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                <div className="map-popup-subtitle border-b border-[var(--border-primary)]/50 pb-1 mb-1" style={{ color: `${color}99` }}>{label}</div>
+                                {flight.model && <div className="map-popup-row">Model: <span className="text-white">{flight.model}</span></div>}
+                                {flight.registration && <div className="map-popup-row">Reg: <span className="text-[#888]">{flight.registration}</span></div>}
+                                {flight.icao24 && <div className="map-popup-row">ICAO24: <span className="text-[#888]">{flight.icao24}</span></div>}
+                                {flight.country && <div className="map-popup-row">Country: <span className="text-white">{flight.country}</span></div>}
+                                {flight.origin && <div className="map-popup-row">From: <span className="text-[#44ff88]">{flight.origin}</span></div>}
+                                {flight.destination && <div className="map-popup-row">To: <span className="text-[#44ff88]">{flight.destination}</span></div>}
+                                {flight.alt != null && <div className="map-popup-row">Altitude: <span className="text-[#44ff88]">{Math.round(flight.alt).toLocaleString()} m</span></div>}
+                                {(flight.speed_knots ?? 0) > 0 && <div className="map-popup-row">Speed: <span className="text-[#00e5ff]">{Math.round(flight.speed_knots)} kn</span></div>}
+                                {flight.heading != null && <div className="map-popup-row">Heading: <span className="text-[#888]">{Math.round(flight.heading)}°</span></div>}
+                                {flight.squawk && <div className="map-popup-row">Squawk: <span className="text-[#888]">{flight.squawk}</span></div>}
+                                {flight.military_type && <div className="map-popup-row">Type: <span style={{ color }}>{flight.military_type.replace(/_/g,' ').toUpperCase()}</span></div>}
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
+                {/* ── Earthquake popup ── */}
+                {selectedEntity?.type === 'earthquake' && (() => {
+                    const eq = (data?.earthquakes as any[])?.[Number(selectedEntity.id)];
+                    if (!eq) return null;
+                    const mag = eq.mag ?? 0;
+                    const magColor = mag >= 7 ? '#ff2222' : mag >= 6 ? '#ff6600' : mag >= 5 ? '#ffaa00' : '#ffdd00';
+                    return (
+                        <Popup longitude={eq.lng} latitude={eq.lat} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} anchor="bottom" offset={12}>
+                            <div className="map-popup" style={{ border: `1px solid ${magColor}50` }}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="map-popup-title" style={{ color: magColor }}>⚡ M{mag.toFixed(1)} EARTHQUAKE</div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                <div className="map-popup-row mt-1 text-white text-[10px] leading-tight">{eq.place || eq.title}</div>
+                                {eq.depth != null && <div className="map-popup-row mt-1">Depth: <span className="text-[#44ff88]">{eq.depth} km</span></div>}
+                                {eq.time != null && <div className="map-popup-row text-[#888]">{new Date(eq.time).toUTCString()}</div>}
+                                {eq.url && <div className="mt-1.5"><a href={eq.url} target="_blank" rel="noopener noreferrer" className="text-[#00e5ff] text-[9px] underline">USGS Details →</a></div>}
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
+                {/* ── Fire Hotspot popup (NASA FIRMS) ── */}
+                {selectedEntity?.type === 'firms_fire' && (() => {
+                    const fire = (data?.firms_fires as any[])?.[Number(selectedEntity.id)];
+                    if (!fire) return null;
+                    const props = selectedEntity.extra || {} as any;
+                    const frp = Number(props.frp ?? fire.frp ?? 0);
+                    const fireColor = frp >= 100 ? '#cc0000' : frp >= 20 ? '#ff4400' : frp >= 5 ? '#ff8800' : '#ffdd00';
+                    return (
+                        <Popup longitude={fire.lng} latitude={fire.lat} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} anchor="bottom" offset={12}>
+                            <div className="map-popup" style={{ border: `1px solid ${fireColor}50` }}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="map-popup-title" style={{ color: fireColor }}>🔥 FIRE HOTSPOT</div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                <div className="map-popup-row mt-1">FRP: <span style={{ color: fireColor }} className="font-semibold">{frp.toFixed(1)} MW</span></div>
+                                {(props.brightness ?? fire.brightness) > 0 && <div className="map-popup-row">Brightness: <span className="text-white">{props.brightness ?? fire.brightness} K</span></div>}
+                                {(props.confidence ?? fire.confidence) && <div className="map-popup-row">Confidence: <span className="text-[#44ff88]">{props.confidence ?? fire.confidence}</span></div>}
+                                {(props.daynight ?? fire.daynight) && <div className="map-popup-row">Detection: <span className="text-[#888]">{props.daynight === 'D' || fire.daynight === 'D' ? 'Daytime' : 'Nighttime'}</span></div>}
+                                {(props.acq_date ?? fire.acq_date) && <div className="map-popup-row text-[#888]">{props.acq_date ?? fire.acq_date} UTC</div>}
+                                <div className="map-popup-subtitle mt-1 text-[#888]">NASA FIRMS · VIIRS</div>
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
+                {/* ── Internet Outage popup ── */}
+                {selectedEntity?.type === 'internet_outage' && (() => {
+                    const outage = (data?.internet_outages as any[])?.find(o => (o.region_code || o.region_name) === selectedEntity.id);
+                    if (!outage) return null;
+                    const severity = Number(outage.severity ?? 0);
+                    const sevColor = severity >= 50 ? '#ff2222' : severity >= 25 ? '#ff8800' : '#ffdd00';
+                    return (
+                        <Popup longitude={outage.lng} latitude={outage.lat} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} anchor="bottom" offset={12}>
+                            <div className="map-popup" style={{ border: `1px solid ${sevColor}40` }}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="map-popup-title" style={{ color: sevColor }}>📡 INTERNET OUTAGE</div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                <div className="map-popup-row mt-1 text-white">{outage.region_name || outage.region_code}</div>
+                                {outage.country_name && <div className="map-popup-row text-[#888]">{outage.country_name}</div>}
+                                <div className="map-popup-row mt-1">Severity: <span style={{ color: sevColor }} className="font-semibold">{severity}% drop</span></div>
+                                {outage.level && <div className="map-popup-row">Level: <span className="text-white capitalize">{outage.level}</span></div>}
+                                {outage.datasource && <div className="map-popup-subtitle mt-1 text-[#888]">Source: {outage.datasource}</div>}
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
+                {/* ── GDELT Incident popup ── */}
+                {selectedEntity?.type === 'gdelt' && (() => {
+                    const incident = (data?.gdelt as any[])?.find(g => (g.properties?.name || String(g.geometry?.coordinates)) === selectedEntity.id);
+                    if (!incident?.geometry?.coordinates) return null;
+                    const [lng, lat] = incident.geometry.coordinates;
+                    const props = incident.properties || {} as any;
+                    return (
+                        <Popup longitude={lng} latitude={lat} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} anchor="bottom" offset={12}>
+                            <div className="map-popup border border-orange-500/30">
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="map-popup-title text-orange-400">⚡ GLOBAL INCIDENT</div>
+                                    <button onClick={() => onEntityClick?.(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-2">✕</button>
+                                </div>
+                                <div className="map-popup-row mt-1 text-white text-[10px] leading-tight max-w-[200px]">{props.name || selectedEntity.id}</div>
+                                {props.url && <div className="mt-1.5"><a href={props.url} target="_blank" rel="noopener noreferrer" className="text-[#00e5ff] text-[9px] underline">Read Article →</a></div>}
+                                <div className="map-popup-subtitle mt-1 text-[#888]">GDELT · Global Events Database</div>
+                            </div>
+                        </Popup>
+                    );
+                })()}
+
                 {/* REGION DOSSIER — location pin on map (full intel shown in right panel) */}
                 {selectedEntity?.type === 'region_dossier' && selectedEntity.extra && (
                     <Marker
