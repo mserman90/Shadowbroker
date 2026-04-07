@@ -287,7 +287,7 @@ export default function Dashboard() {
           >
             {/* LEFT PANEL - DATA LAYERS */}
             <ErrorBoundary name="WorldviewLeftPanel">
-              <WorldviewLeftPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onSettingsClick={() => setSettingsOpen(true)} onLegendClick={() => setLegendOpen(true)} gibsDate={gibsDate} setGibsDate={setGibsDate} gibsOpacity={gibsOpacity} setGibsOpacity={setGibsOpacity} onEntityClick={setSelectedEntity} onFlyTo={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} trackedSdr={trackedSdr} setTrackedSdr={setTrackedSdr} />
+              <WorldviewLeftPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onSettingsClick={() => setSettingsOpen(true)} onLegendClick={() => setLegendOpen(true)} gibsDate={gibsDate} setGibsDate={setGibsDate} gibsOpacity={gibsOpacity} setGibsOpacity={setGibsOpacity} onEntityClick={setSelectedEntity} onFlyTo={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} trackedSdr={trackedSdr} setTrackedSdr={setTrackedSdr} onSpyGraphClick={() => { setSpyGraphOpen(o => !o); setGozuOpen(false); }} spyGraphActive={spyGraphOpen} onGozuClick={() => { setGozuOpen(o => !o); setSpyGraphOpen(false); }} gozuActive={gozuOpen} />
             </ErrorBoundary>
           </motion.div>
 
@@ -453,48 +453,6 @@ export default function Dashboard() {
           RESTORE UI
         </button>
       )}
-
-      {/* SPYGRAPH + GÖZCÜ TOGGLE BUTTONS */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[201] pointer-events-auto flex items-center gap-2">
-        {/* SPYGRAPH */}
-        <button
-          onClick={() => { setSpyGraphOpen(true); setGozuOpen(false); }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded border text-[10px] font-mono tracking-widest transition-all"
-          style={{
-            background: spyGraphOpen ? 'rgba(34,197,94,0.15)' : 'rgba(4,8,15,0.75)',
-            borderColor: spyGraphOpen ? '#22c55e' : 'rgba(34,197,94,0.35)',
-            color: spyGraphOpen ? '#4ade80' : 'rgba(34,197,94,0.7)',
-            boxShadow: spyGraphOpen ? '0 0 16px rgba(34,197,94,0.3)' : 'none',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="5" cy="12" r="2"/>
-            <line x1="12" y1="7" x2="19" y2="10"/><line x1="12" y1="7" x2="5" y2="10"/>
-            <line x1="12" y1="17" x2="19" y2="14"/><line x1="12" y1="17" x2="5" y2="14"/>
-          </svg>
-          SPYGRAPH
-        </button>
-
-        {/* GÖZCÜ */}
-        <button
-          onClick={() => { setGozuOpen(true); setSpyGraphOpen(false); }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded border text-[10px] font-mono tracking-widest transition-all"
-          style={{
-            background: gozuOpen ? 'rgba(16,185,129,0.15)' : 'rgba(4,8,15,0.75)',
-            borderColor: gozuOpen ? '#10b981' : 'rgba(16,185,129,0.35)',
-            color: gozuOpen ? '#34d399' : 'rgba(16,185,129,0.7)',
-            boxShadow: gozuOpen ? '0 0 16px rgba(16,185,129,0.3)' : 'none',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/>
-          </svg>
-          GÖZCÜ
-        </button>
-      </div>
 
       {/* SPYGRAPH PANEL */}
       <SpyGraph

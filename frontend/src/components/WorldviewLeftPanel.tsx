@@ -63,7 +63,7 @@ const POTUS_ICAOS: Record<string, { label: string; type: string }> = {
 };
 import type { DashboardData, ActiveLayers, SelectedEntity, KiwiSDR } from "@/types/dashboard";
 
-const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, activeLayers, setActiveLayers, onSettingsClick, onLegendClick, gibsDate, setGibsDate, gibsOpacity, setGibsOpacity, onEntityClick, onFlyTo, trackedSdr, setTrackedSdr }: { data: DashboardData; activeLayers: ActiveLayers; setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>; onSettingsClick?: () => void; onLegendClick?: () => void; gibsDate?: string; setGibsDate?: (d: string) => void; gibsOpacity?: number; setGibsOpacity?: (o: number) => void; onEntityClick?: (entity: SelectedEntity) => void; onFlyTo?: (lat: number, lng: number) => void; trackedSdr?: KiwiSDR | null; setTrackedSdr?: (sdr: KiwiSDR | null) => void }) {
+const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, activeLayers, setActiveLayers, onSettingsClick, onLegendClick, gibsDate, setGibsDate, gibsOpacity, setGibsOpacity, onEntityClick, onFlyTo, trackedSdr, setTrackedSdr, onSpyGraphClick, spyGraphActive, onGozuClick, gozuActive }: { data: DashboardData; activeLayers: ActiveLayers; setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>; onSettingsClick?: () => void; onLegendClick?: () => void; gibsDate?: string; setGibsDate?: (d: string) => void; gibsOpacity?: number; setGibsOpacity?: (o: number) => void; onEntityClick?: (entity: SelectedEntity) => void; onFlyTo?: (lat: number, lng: number) => void; trackedSdr?: KiwiSDR | null; setTrackedSdr?: (sdr: KiwiSDR | null) => void; onSpyGraphClick?: () => void; spyGraphActive?: boolean; onGozuClick?: () => void; gozuActive?: boolean }) {
     const [isMinimized, setIsMinimized] = useState(false);
     const { theme, toggleTheme, hudColor, cycleHudColor } = useTheme();
     const [gibsPlaying, setGibsPlaying] = useState(false);
@@ -199,6 +199,41 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, active
                         >
                             <BookOpen size={12} />
                             <span className="text-[8px] font-mono tracking-widest font-bold">KEY</span>
+                        </button>
+                    )}
+                    {onSpyGraphClick && (
+                        <button
+                            onClick={onSpyGraphClick}
+                            className={`h-7 px-2 rounded-lg border flex items-center justify-center gap-1 transition-all font-mono text-[8px] tracking-widest font-bold ${
+                                spyGraphActive
+                                    ? 'border-green-500/70 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.25)]'
+                                    : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-green-500/50 hover:text-green-400 hover:bg-[var(--hover-accent)]'
+                            }`}
+                            title="SpyGraph OSINT Network"
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="5" cy="12" r="2"/>
+                                <line x1="12" y1="7" x2="19" y2="10"/><line x1="12" y1="7" x2="5" y2="10"/>
+                                <line x1="12" y1="17" x2="19" y2="14"/><line x1="12" y1="17" x2="5" y2="14"/>
+                            </svg>
+                            SPY
+                        </button>
+                    )}
+                    {onGozuClick && (
+                        <button
+                            onClick={onGozuClick}
+                            className={`h-7 px-2 rounded-lg border flex items-center justify-center gap-1 transition-all font-mono text-[8px] tracking-widest font-bold ${
+                                gozuActive
+                                    ? 'border-emerald-500/70 text-emerald-400 bg-emerald-500/10 shadow-[0_0_8px_rgba(16,185,129,0.25)]'
+                                    : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-[var(--hover-accent)]'
+                            }`}
+                            title="Gözcü Küresel İstihbarat Ağı"
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/>
+                            </svg>
+                            GÖZ
                         </button>
                     )}
                     <span className={`h-7 px-2 rounded-lg border border-[var(--border-primary)] flex items-center justify-center text-[8px] ${theme === 'dark' ? 'text-cyan-400' : 'text-[var(--text-muted)]'} font-mono tracking-widest select-none`}>
