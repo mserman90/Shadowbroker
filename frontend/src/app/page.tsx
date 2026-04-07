@@ -245,28 +245,7 @@ export default function Dashboard() {
 
       {uiVisible && (
         <>
-          {/* WORLDVIEW HEADER */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1 }}
-            className="absolute top-6 left-6 z-[200] pointer-events-none flex items-center gap-4 hud-zone"
-          >
-            <div className="w-8 h-8 flex items-center justify-center">
-              {/* Target Reticle Icon */}
-              <div className="w-6 h-6 rounded-full border border-cyan-500 relative flex items-center justify-center">
-                <div className="w-4 h-4 rounded-full bg-cyan-500/30"></div>
-                <div className="absolute top-[-2px] bottom-[-2px] w-[1px] bg-cyan-500"></div>
-                <div className="absolute left-[-2px] right-[-2px] h-[1px] bg-cyan-500"></div>
-              </div>
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-bold tracking-[0.4em] text-[var(--text-primary)] flex items-center gap-3" style={{ fontFamily: 'monospace' }}>
-                S H A D O W <span className="text-cyan-400">B R O K E R</span>
-              </h1>
-              <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-[0.3em] mt-1 ml-1">GLOBAL THREAT INTERCEPT</span>
-            </div>
-          </motion.div>
+
 
           {/* SYSTEM METRICS TOP LEFT */}
           <div className="absolute top-2 left-6 text-[8px] font-mono tracking-widest text-cyan-500/50 z-[200] pointer-events-none hud-zone">
