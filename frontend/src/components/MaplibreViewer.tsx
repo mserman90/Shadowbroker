@@ -744,6 +744,72 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                     </Source>
                 )}
 
+                {/* NASA GIBS MODIS SWIR (Bands721) — fires, burn scars */}
+                {activeLayers.gibs_swir && gibsDate && (
+                    <Source
+                        key={`gibs-swir-${gibsDate}`}
+                        id="gibs-swir"
+                        type="raster"
+                        tiles={[`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_Bands721/default/${gibsDate}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`]}
+                        tileSize={256}
+                        maxzoom={9}
+                    >
+                        <Layer
+                            id="gibs-swir-layer"
+                            type="raster"
+                            beforeId="imagery-ceiling"
+                            paint={{
+                                'raster-opacity': gibsOpacity ?? 0.6,
+                                'raster-fade-duration': 0
+                            }}
+                        />
+                    </Source>
+                )}
+
+                {/* NASA GIBS MODIS NDVI 8-Day — vegetation stress */}
+                {activeLayers.gibs_ndvi && gibsDate && (
+                    <Source
+                        key={`gibs-ndvi-${gibsDate}`}
+                        id="gibs-ndvi"
+                        type="raster"
+                        tiles={[`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${gibsDate}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`]}
+                        tileSize={256}
+                        maxzoom={9}
+                    >
+                        <Layer
+                            id="gibs-ndvi-layer"
+                            type="raster"
+                            beforeId="imagery-ceiling"
+                            paint={{
+                                'raster-opacity': gibsOpacity ?? 0.7,
+                                'raster-fade-duration': 0
+                            }}
+                        />
+                    </Source>
+                )}
+
+                {/* NASA GIBS MODIS Aerosol — smoke, haze, dust */}
+                {activeLayers.gibs_aerosol && gibsDate && (
+                    <Source
+                        key={`gibs-aerosol-${gibsDate}`}
+                        id="gibs-aerosol"
+                        type="raster"
+                        tiles={[`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Aerosol/default/${gibsDate}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`]}
+                        tileSize={256}
+                        maxzoom={6}
+                    >
+                        <Layer
+                            id="gibs-aerosol-layer"
+                            type="raster"
+                            beforeId="imagery-ceiling"
+                            paint={{
+                                'raster-opacity': gibsOpacity ?? 0.6,
+                                'raster-fade-duration': 0
+                            }}
+                        />
+                    </Source>
+                )}
+
                 {/* NASA FIRMS VIIRS — fire hotspot icons from FIRMS CSV feed */}
                 {/* firms-fires: data pushed imperatively via useImperativeSource */}
                     <Source id="firms-fires" type="geojson" data={EMPTY_FC as any} cluster={true} clusterRadius={40} clusterMaxZoom={10}>
@@ -2269,6 +2335,10 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                 {eq.depth != null && <div className="map-popup-row mt-1">Depth: <span className="text-[#44ff88]">{eq.depth} km</span></div>}
                                 {eq.time != null && <div className="map-popup-row text-[#888]">{new Date(eq.time).toUTCString()}</div>}
                                 {eq.url && <div className="mt-1.5"><a href={eq.url} target="_blank" rel="noopener noreferrer" className="text-[#00e5ff] text-[9px] underline">USGS Details →</a></div>}
+                                <div className="mt-1.5 flex gap-2">
+                                    <a href={`https://browser.dataspace.copernicus.eu/?zoom=10&lat=${eq.lat.toFixed(5)}&lng=${eq.lng.toFixed(5)}&themeId=DEFAULT&datasetId=S2_L2A_CDAS&layerId=1_TRUE_COLOR&demSource3D=MAPZEN&cloudCoverage=30`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-[8px] underline flex items-center gap-0.5">🛰 Copernicus →</a>
+                                    <a href={`https://browser.dataspace.copernicus.eu/?zoom=10&lat=${eq.lat.toFixed(5)}&lng=${eq.lng.toFixed(5)}&themeId=DEFAULT&datasetId=S2_L2A_CDAS&layerId=2_SWIR&demSource3D=MAPZEN&cloudCoverage=30`} target="_blank" rel="noopener noreferrer" className="text-orange-400 text-[8px] underline flex items-center gap-0.5">SWIR →</a>
+                                </div>
                             </div>
                         </Popup>
                     );
@@ -2294,6 +2364,10 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                 {(props.daynight ?? fire.daynight) && <div className="map-popup-row">Detection: <span className="text-[#888]">{props.daynight === 'D' || fire.daynight === 'D' ? 'Daytime' : 'Nighttime'}</span></div>}
                                 {(props.acq_date ?? fire.acq_date) && <div className="map-popup-row text-[#888]">{props.acq_date ?? fire.acq_date} UTC</div>}
                                 <div className="map-popup-subtitle mt-1 text-[#888]">NASA FIRMS · VIIRS</div>
+                                <div className="mt-1.5 flex gap-2">
+                                    <a href={`https://browser.dataspace.copernicus.eu/?zoom=11&lat=${fire.lat.toFixed(5)}&lng=${fire.lng.toFixed(5)}&themeId=DEFAULT&datasetId=S2_L2A_CDAS&layerId=2_SWIR&demSource3D=MAPZEN&cloudCoverage=30`} target="_blank" rel="noopener noreferrer" className="text-orange-400 text-[8px] underline flex items-center gap-0.5">🛰 SWIR →</a>
+                                    <a href={`https://browser.dataspace.copernicus.eu/?zoom=11&lat=${fire.lat.toFixed(5)}&lng=${fire.lng.toFixed(5)}&themeId=DEFAULT&datasetId=S2_L2A_CDAS&layerId=3_FALSE_COLOR&demSource3D=MAPZEN&cloudCoverage=30`} target="_blank" rel="noopener noreferrer" className="text-green-400 text-[8px] underline flex items-center gap-0.5">FALSE COLOR →</a>
+                                </div>
                             </div>
                         </Popup>
                     );
@@ -2317,6 +2391,9 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                 <div className="map-popup-row mt-1">Severity: <span style={{ color: sevColor }} className="font-semibold">{severity}% drop</span></div>
                                 {outage.level && <div className="map-popup-row">Level: <span className="text-white capitalize">{outage.level}</span></div>}
                                 {outage.datasource && <div className="map-popup-subtitle mt-1 text-[#888]">Source: {outage.datasource}</div>}
+                                <div className="mt-1.5">
+                                    <a href={`https://browser.dataspace.copernicus.eu/?zoom=8&lat=${outage.lat.toFixed(5)}&lng=${outage.lng.toFixed(5)}&themeId=DEFAULT&datasetId=S2_L2A_CDAS&layerId=1_TRUE_COLOR&demSource3D=MAPZEN&cloudCoverage=30`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-[8px] underline flex items-center gap-0.5">🛰 Copernicus Imagery →</a>
+                                </div>
                             </div>
                         </Popup>
                     );

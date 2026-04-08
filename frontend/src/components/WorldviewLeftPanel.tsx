@@ -63,7 +63,7 @@ const POTUS_ICAOS: Record<string, { label: string; type: string }> = {
 };
 import type { DashboardData, ActiveLayers, SelectedEntity, KiwiSDR } from "@/types/dashboard";
 
-const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, activeLayers, setActiveLayers, onSettingsClick, onLegendClick, gibsDate, setGibsDate, gibsOpacity, setGibsOpacity, onEntityClick, onFlyTo, trackedSdr, setTrackedSdr, onSpyGraphClick, spyGraphActive, onGozuClick, gozuActive }: { data: DashboardData; activeLayers: ActiveLayers; setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>; onSettingsClick?: () => void; onLegendClick?: () => void; gibsDate?: string; setGibsDate?: (d: string) => void; gibsOpacity?: number; setGibsOpacity?: (o: number) => void; onEntityClick?: (entity: SelectedEntity) => void; onFlyTo?: (lat: number, lng: number) => void; trackedSdr?: KiwiSDR | null; setTrackedSdr?: (sdr: KiwiSDR | null) => void; onSpyGraphClick?: () => void; spyGraphActive?: boolean; onGozuClick?: () => void; gozuActive?: boolean }) {
+const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, activeLayers, setActiveLayers, onSettingsClick, onLegendClick, gibsDate, setGibsDate, gibsOpacity, setGibsOpacity, onEntityClick, onFlyTo, trackedSdr, setTrackedSdr, onSpyGraphClick, spyGraphActive, onGozuClick, gozuActive, onCopernicusClick, copernicusActive }: { data: DashboardData; activeLayers: ActiveLayers; setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>; onSettingsClick?: () => void; onLegendClick?: () => void; gibsDate?: string; setGibsDate?: (d: string) => void; gibsOpacity?: number; setGibsOpacity?: (o: number) => void; onEntityClick?: (entity: SelectedEntity) => void; onFlyTo?: (lat: number, lng: number) => void; trackedSdr?: KiwiSDR | null; setTrackedSdr?: (sdr: KiwiSDR | null) => void; onSpyGraphClick?: () => void; spyGraphActive?: boolean; onGozuClick?: () => void; gozuActive?: boolean; onCopernicusClick?: () => void; copernicusActive?: boolean }) {
     const [isMinimized, setIsMinimized] = useState(false);
     const { theme, toggleTheme, hudColor, cycleHudColor } = useTheme();
     const [gibsPlaying, setGibsPlaying] = useState(false);
@@ -142,7 +142,10 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, active
         { id: "global_incidents", name: "Global Incidents", source: "GDELT", count: data?.gdelt?.length || 0, icon: Activity },
         { id: "cctv", name: "CCTV Mesh", source: "CCTV Mesh + Street View", count: data?.cctv?.length || 0, icon: Cctv },
         { id: "gps_jamming", name: "GPS Jamming", source: "ADS-B NACp", count: data?.gps_jamming?.length || 0, icon: Radio },
-        { id: "gibs_imagery", name: "MODIS Terra (Daily)", source: "NASA GIBS", count: null, icon: Globe },
+        { id: "gibs_imagery", name: "MODIS True Color (Daily)", source: "NASA GIBS", count: null, icon: Globe },
+        { id: "gibs_swir", name: "MODIS SWIR (Fire/Burn)", source: "NASA GIBS · Bands721", count: null, icon: Flame },
+        { id: "gibs_ndvi", name: "MODIS NDVI (8-Day)", source: "NASA GIBS · Vegetation", count: null, icon: Globe },
+        { id: "gibs_aerosol", name: "MODIS Aerosol (Smoke)", source: "NASA GIBS · Aerosol OD", count: null, icon: Globe },
         { id: "highres_satellite", name: "High-Res Satellite", source: "Esri World Imagery", count: null, icon: Satellite },
         { id: "kiwisdr", name: "KiwiSDR Receivers", source: "KiwiSDR.com", count: data?.kiwisdr?.length || 0, icon: Radio },
         { id: "firms", name: "Fire Hotspots (24h)", source: "NASA FIRMS VIIRS", count: data?.firms_fires?.length || 0, icon: Flame },
@@ -234,6 +237,26 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({ data, active
                                 <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/>
                             </svg>
                             GÖZ
+                        </button>
+                    )}
+                    {onCopernicusClick && (
+                        <button
+                            onClick={onCopernicusClick}
+                            className={`h-7 px-2 rounded-lg border flex items-center justify-center gap-1 transition-all font-mono text-[8px] tracking-widest font-bold ${
+                                copernicusActive
+                                    ? 'border-blue-500/70 text-blue-400 bg-blue-500/10 shadow-[0_0_8px_rgba(59,130,246,0.25)]'
+                                    : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-blue-500/50 hover:text-blue-400 hover:bg-[var(--hover-accent)]'
+                            }`}
+                            title="Copernicus Sentinel-2 Browser"
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M13 7 9 3 5 7l4 4"/>
+                                <path d="m17 11 4 4-4 4-4-4"/>
+                                <path d="m8 12 4 4 6-6-4-4Z"/>
+                                <path d="m16 8 3-3"/>
+                                <path d="M9 21a6 6 0 0 0-6-6"/>
+                            </svg>
+                            SAT
                         </button>
                     )}
                     <span className={`h-7 px-2 rounded-lg border border-[var(--border-primary)] flex items-center justify-center text-[8px] ${theme === 'dark' ? 'text-cyan-400' : 'text-[var(--text-muted)]'} font-mono tracking-widest select-none`}>

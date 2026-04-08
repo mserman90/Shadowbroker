@@ -456,6 +456,9 @@ export interface ActiveLayers {
   day_night: boolean;
   gps_jamming: boolean;
   gibs_imagery: boolean;
+  gibs_swir: boolean;
+  gibs_ndvi: boolean;
+  gibs_aerosol: boolean;
   highres_satellite: boolean;
   kiwisdr: boolean;
   firms: boolean;

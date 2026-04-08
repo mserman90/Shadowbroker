@@ -15,6 +15,7 @@ import RadioInterceptPanel from "@/components/RadioInterceptPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import MapLegend from "@/components/MapLegend";
 import ScaleBar from "@/components/ScaleBar";
+import CopernicusPanel from "@/components/CopernicusPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { DashboardDataProvider } from "@/lib/DashboardDataContext";
 import OnboardingModal, { useOnboarding } from "@/components/OnboardingModal";
@@ -161,6 +162,9 @@ export default function Dashboard() {
     day_night: true,
     gps_jamming: true,
     gibs_imagery: false,
+    gibs_swir: false,
+    gibs_ndvi: false,
+    gibs_aerosol: false,
     highres_satellite: false,
     kiwisdr: false,
     firms: false,
@@ -204,6 +208,7 @@ export default function Dashboard() {
   const [cameraCenter, setCameraCenter] = useState<{ lat: number, lng: number } | null>(null);
   const [spyGraphOpen, setSpyGraphOpen] = useState(false);
   const [gozuOpen, setGozuOpen] = useState(false);
+  const [copernicusOpen, setCopernicusOpen] = useState(false);
 
   // Onboarding & connection status
   const { showOnboarding, setShowOnboarding } = useOnboarding();
@@ -266,7 +271,7 @@ export default function Dashboard() {
           >
             {/* LEFT PANEL - DATA LAYERS */}
             <ErrorBoundary name="WorldviewLeftPanel">
-              <WorldviewLeftPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onSettingsClick={() => setSettingsOpen(true)} onLegendClick={() => setLegendOpen(true)} gibsDate={gibsDate} setGibsDate={setGibsDate} gibsOpacity={gibsOpacity} setGibsOpacity={setGibsOpacity} onEntityClick={setSelectedEntity} onFlyTo={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} trackedSdr={trackedSdr} setTrackedSdr={setTrackedSdr} onSpyGraphClick={() => { setSpyGraphOpen(o => !o); setGozuOpen(false); }} spyGraphActive={spyGraphOpen} onGozuClick={() => { setGozuOpen(o => !o); setSpyGraphOpen(false); }} gozuActive={gozuOpen} />
+              <WorldviewLeftPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onSettingsClick={() => setSettingsOpen(true)} onLegendClick={() => setLegendOpen(true)} gibsDate={gibsDate} setGibsDate={setGibsDate} gibsOpacity={gibsOpacity} setGibsOpacity={setGibsOpacity} onEntityClick={setSelectedEntity} onFlyTo={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} trackedSdr={trackedSdr} setTrackedSdr={setTrackedSdr} onSpyGraphClick={() => { setSpyGraphOpen(o => !o); setGozuOpen(false); }} spyGraphActive={spyGraphOpen} onGozuClick={() => { setGozuOpen(o => !o); setSpyGraphOpen(false); }} gozuActive={gozuOpen} onCopernicusClick={() => setCopernicusOpen(o => !o)} copernicusActive={copernicusOpen} />
             </ErrorBoundary>
           </motion.div>
 
@@ -443,6 +448,9 @@ export default function Dashboard() {
 
       {/* GÖZCÜ PANEL */}
       {gozuOpen && <Gozcu onClose={() => setGozuOpen(false)} />}
+
+      {/* COPERNICUS PANEL */}
+      <CopernicusPanel isOpen={copernicusOpen} onClose={() => setCopernicusOpen(false)} mapCenter={cameraCenter} mapZoom={mapView.zoom} />
 
       {/* DYNAMIC SCALE BAR */}
       <div className="absolute bottom-[5.5rem] left-[26rem] z-[201] pointer-events-auto">
